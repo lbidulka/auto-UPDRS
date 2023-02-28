@@ -1,14 +1,15 @@
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
+from utils import info
 
 # TODO: DETERMINE IF MEAN OF FEATURES IS OVER TIME? IF SO, COULD WE USE RAW DATA?
 class gait_features():
     def __init__(self, subjects, ts_path) -> None:
         self.subjects = subjects
         self.ts_path = ts_path
+        self.feat_names = info.clinical_gait_feat_names
 
         self.data_normal = []
-
         for idx, subj in enumerate(subjects):
             # './Weakly_Supervised_Learning/outputs_finetuned/Predictions_'
             data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')
@@ -28,8 +29,38 @@ class gait_features():
             rotation_matrix[:,:,2] = z_vec
 
             self.data_normal.append(np.matmul(data_normal, rotation_matrix))
+        
+        # Compute features
+        step_widths = np.array(self._step_width(subjects))
+        step_lengths = np.array(self._step_lengths(subjects))
+        cadences_gaitspeeds_gaitspeedvars = np.array(self._cadence_gaitspeed_gaitspeedvar(subjects))
+        foot_lifts = np.array(self._foot_lifts(subjects))
+        arm_swings = np.array(self._arm_swings(subjects))
+        hip_flexions = np.array(self._hip_flexions(subjects))
+        knee_flexions = np.array(self._knee_flexions(subjects))
+        trunk_rots = np.array(self._trunk_rots(subjects))
+
+        self.feats = np.vstack([
+            step_widths,
+            step_lengths[:, 0],  # R Step Length
+            step_lengths[:, 1],   # L Step Length
+            cadences_gaitspeeds_gaitspeedvars[:, 0],  # Cadence
+            foot_lifts[:, 0],  # R Foot Clearance
+            foot_lifts[:, 1],  # L Foot Clearance
+            arm_swings[:, 0],  # R Arm Swing
+            arm_swings[:, 1],  # L Arm Swing
+            hip_flexions[:, 0],  # R Hip Flexion
+            hip_flexions[:, 1],  # L Hip Flexion
+            knee_flexions[:, 0],  # R Knee Flexion
+            knee_flexions[:, 1],  # L Knee Flexion
+            trunk_rots[:, 0],  # R Trunk rotation
+            trunk_rots[:, 1],  # L Trunk rotation
+            arm_swings[:, 2],  # Arm swing symmetry
+            cadences_gaitspeeds_gaitspeedvars[:, 1],  # Gait speed
+            cadences_gaitspeeds_gaitspeedvars[:, 2],  # Gait Speed var
+        ])
     
-    def step_width(self, subjects):
+    def _step_width(self, subjects):
         step_widths = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -45,7 +76,7 @@ class gait_features():
         
         return step_widths
     
-    def step_lengths(self, subjects):
+    def _step_lengths(self, subjects):
         step_lengths = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -72,7 +103,7 @@ class gait_features():
         
         return step_lengths
             
-    def cadence_gaitspeed_gaitspeedvar(self, subjects):
+    def _cadence_gaitspeed_gaitspeedvar(self, subjects):
         cadences_and_speeds = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -93,7 +124,7 @@ class gait_features():
 
         return cadences_and_speeds
     
-    def foot_lifts(self, subjects):
+    def _foot_lifts(self, subjects):
         foot_lifts = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -117,7 +148,7 @@ class gait_features():
         
         return foot_lifts
 
-    def arm_swings(self, subjects):
+    def _arm_swings(self, subjects):
         arm_swings = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -146,7 +177,7 @@ class gait_features():
         
         return arm_swings
     
-    def hip_flexions(self, subjects):
+    def _hip_flexions(self, subjects):
         hip_flexions = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -170,7 +201,7 @@ class gait_features():
 
         return hip_flexions
 
-    def knee_flexions(self, subjects):
+    def _knee_flexions(self, subjects):
         knee_flexions = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -196,7 +227,7 @@ class gait_features():
             
         return knee_flexions
 
-    def trunk_rots(self, subjects):
+    def _trunk_rots(self, subjects):
         trunk_rots = []
         for subj in subjects:
             idx = self.subjects.index(subj)

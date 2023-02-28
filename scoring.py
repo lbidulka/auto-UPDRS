@@ -8,20 +8,9 @@ def body_tasks(input_args):
 
     subjects = info.subjects_All
 
-    # Get the gait features
+    # Get the gait features, and print those of subject S04
     gait_feats = post_processing.gait_features(subjects, ts_path)
-
-    step_widths = gait_feats.step_width(subjects)
-    step_lengths = gait_feats.step_lengths(subjects)
-    cadences_gaitspeeds_gaitspeedvars = gait_feats.cadence_gaitspeed_gaitspeedvar(subjects)
-    foot_lifts = gait_feats.foot_lifts(subjects)
-    arm_swings = gait_feats.arm_swings(subjects)
-    hip_flexions = gait_feats.hip_flexions(subjects)
-    knee_flexions = gait_feats.knee_flexions(subjects)
-    trunk_rots = gait_feats.trunk_rots(subjects)
-
-    print(trunk_rots)
-
+    print(gait_feats.feats[:, gait_feats.subjects.index('S04')])
 
 def get_args():
     parser = argparse.ArgumentParser()
