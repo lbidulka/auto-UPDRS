@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, find_peaks
 
+# TODO: DETERMINE IF MEAN OF FEATURES IS OVER TIME? IF SO, COULD WE USE RAW DATA?
 class gait_features():
     def __init__(self, subjects, ts_path) -> None:
         self.subjects = subjects
@@ -29,7 +30,6 @@ class gait_features():
             self.data_normal.append(np.matmul(data_normal, rotation_matrix))
     
     def step_width(self, subjects):
-
         step_widths = []
         for subj in subjects:
             idx = self.subjects.index(subj)
@@ -44,4 +44,181 @@ class gait_features():
             step_widths.append(np.mean(np.asarray(A)))
         
         return step_widths
+    
+    def step_lengths(self, subjects):
+        step_lengths = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+            step_length = np.linalg.norm((self.data_normal[idx][:,3] - self.data_normal[idx][:,6]), axis=-1)
+            row_r = (self.data_normal[idx][:,6,2] - self.data_normal[idx][:,3,2] > 0)
+            row_l = (self.data_normal[idx][:,3,2] - self.data_normal[idx][:,6,2] > 0)
+            step_length_r = step_length[row_r]
+            step_length_l = step_length[row_l]
+            bone_length_r = np.linalg.norm((self.data_normal[idx][:,5] - self.data_normal[idx][:,6]), axis=-1)[row_r]
+            bone_length_l = np.linalg.norm((self.data_normal[idx][:,3] - self.data_normal[idx][:,2]), axis=-1)[row_l]
+            step_length_r /= bone_length_r
+            step_length_l /= bone_length_l
+
+            A=[]
+            for ii in range(30,len(step_length_r)):
+                A.append(np.max(step_length_r[ii-30:ii]))
+            step_length_r = np.asarray(A)
+            B=[]
+            for ii in range(30,len(step_length_l)):
+                B.append(np.max(step_length_l[ii-30:ii]))
+            step_length_l = np.asarray(B)
+
+            step_lengths.append([np.mean(step_length_r), np.mean(step_length_l)])
+        
+        return step_lengths
             
+    def cadence_gaitspeed_gaitspeedvar(self, subjects):
+        cadences_and_speeds = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+            toe_traj = np.abs(self.data_normal[idx][:,6,2] - self.data_normal[idx][:,3,2])
+            peaks, _ = find_peaks(toe_traj, distance=5, height=-0.2)
+            ave = np.mean(toe_traj[peaks]) - 0.3
+            peaks, _ = find_peaks(toe_traj, distance=5, height=ave)
+
+            # TODO: FIND OUT WHY THIS IS DIFFERENT FOR S01, S28, S29, S31
+            if subj in ['S01','S28','S29','S31']:
+                cadence = 60/((peaks[1:]-peaks[:-1])/30)
+                gait_speed = toe_traj[peaks[1:]] * cadence
+            else:
+                cadence = 60 / ((peaks[1:] - peaks[:-1]) / 15)
+                gait_speed = toe_traj[peaks[1:]] * cadence
+        
+            cadences_and_speeds.append([np.mean(cadence), np.mean(gait_speed), np.std(gait_speed)])
+
+        return cadences_and_speeds
+    
+    def foot_lifts(self, subjects):
+        foot_lifts = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+
+            foot_height_r = self.data_normal[idx][:,6,1] - self.data_normal[idx][:,4,1]
+            foot_height_l = self.data_normal[idx][:,3,1] - self.data_normal[idx][:,1,1]
+            bone_length_l = np.linalg.norm((self.data_normal[idx][:,1] - self.data_normal[idx][:,2]), axis=-1)
+            bone_length_r = np.linalg.norm((self.data_normal[idx][:,5] - self.data_normal[idx][:,4]), axis=-1)
+            foot_height_r /= bone_length_r
+            foot_height_l /= bone_length_l
+
+            A=[]
+            B=[]
+            for ii in range(30,len(foot_height_r)):
+                A.append(np.max(foot_height_r[ii-30:ii]) - np.min(foot_height_r[ii-30:ii]))
+                B.append(np.max(foot_height_l[ii-30:ii]) - np.min(foot_height_l[ii-30:ii]))
+            foot_height_n_r = np.asarray(A)
+            foot_height_n_l = np.asarray(B)
+
+            foot_lifts.append([np.mean(foot_height_n_r), np.mean(foot_height_n_l)])
+        
+        return foot_lifts
+
+    def arm_swings(self, subjects):
+        arm_swings = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+
+            # Right hand
+            dist = np.linalg.norm((self.data_normal[idx][:,14] - self.data_normal[idx][:,4]), axis=-1)
+            bone_length = np.linalg.norm((self.data_normal[idx][:,4] - self.data_normal[idx][:,1]), axis=-1)
+            dist /= bone_length
+
+            A=[]
+            for ii in range(30,len(dist)):
+                A.append(np.max(dist[ii-30:ii]) - np.min(dist[ii-30:ii]))
+            hand_mov_n_r = np.asarray(A)
+
+            # Left hand
+            dist = np.linalg.norm((self.data_normal[idx][:,11] - self.data_normal[idx][:,1]), axis=-1)
+            dist /= bone_length
+
+            A=[]
+            for ii in range(30,len(dist)):
+                A.append(np.max(dist[ii-30:ii]) - np.min(dist[ii-30:ii]))
+            hand_mov_n_l = np.asarray(A)
+
+            arm_swings.append([np.mean(hand_mov_n_r), np.mean(hand_mov_n_l), 
+                                   np.mean(hand_mov_n_l) / np.mean(hand_mov_n_r)])
+        
+        return arm_swings
+    
+    def hip_flexions(self, subjects):
+        hip_flexions = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+
+            dist_l = self.data_normal[idx][:,1,2] - self.data_normal[idx][:,2,2]
+            bone_l = np.linalg.norm((self.data_normal[idx][:,1] - self.data_normal[idx][:,2]), axis=-1)
+            dist_r = self.data_normal[idx][:,4,2] - self.data_normal[idx][:,5,2]
+            bone_r = np.linalg.norm((self.data_normal[idx][:,4] - self.data_normal[idx][:,5]), axis=-1)
+            hip_flex_r = dist_r / bone_r
+            hip_flex_l = dist_l / bone_l
+
+            A = []
+            B = []
+            for ii in range(30,len(hip_flex_r)):
+                A.append(np.max(hip_flex_r[ii-30:ii]) - np.min(hip_flex_r[ii-30:ii]))
+                B.append(np.max(hip_flex_l[ii-30:ii]) - np.min(hip_flex_l[ii-30:ii])) 
+            hip_flex_r = np.asarray(A)
+            hip_flex_l = np.asarray(B)
+
+            hip_flexions.append([np.mean(hip_flex_r), np.mean(hip_flex_l)])
+
+        return hip_flexions
+
+    def knee_flexions(self, subjects):
+        knee_flexions = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+
+            thigh_l = np.linalg.norm((self.data_normal[idx][:,1] - self.data_normal[idx][:,2]), axis=-1)
+            shin_l = np.linalg.norm((self.data_normal[idx][:,3] - self.data_normal[idx][:,2]), axis=-1)
+            leg_l = np.linalg.norm((self.data_normal[idx][:,1] - self.data_normal[idx][:,3]), axis=-1)
+            thigh_r = np.linalg.norm((self.data_normal[idx][:,5] - self.data_normal[idx][:,4]), axis=-1)
+            shin_r = np.linalg.norm((self.data_normal[idx][:,5] - self.data_normal[idx][:,6]), axis=-1)
+            leg_r = np.linalg.norm((self.data_normal[idx][:,4] - self.data_normal[idx][:,6]), axis=-1)
+            knee_flex_r = leg_r**2 / (thigh_r * shin_r) - thigh_r / shin_r - shin_r / thigh_r
+            knee_flex_l = leg_l**2 / (thigh_l * shin_l) - thigh_l / shin_l - shin_l / thigh_l
+
+            A = []
+            B = []
+            for ii in range(30,len(knee_flex_r)):
+                A.append(np.max(knee_flex_r[ii-30:ii]) - np.min(knee_flex_r[ii-30:ii]))
+                B.append(np.max(knee_flex_l[ii-30:ii]) - np.min(knee_flex_l[ii-30:ii]))
+            knee_flex_r = np.asarray(A)
+            knee_flex_l = np.asarray(B)
+
+            knee_flexions.append([np.mean(knee_flex_r), np.mean(knee_flex_l)])
+            
+        return knee_flexions
+
+    def trunk_rots(self, subjects):
+        trunk_rots = []
+        for subj in subjects:
+            idx = self.subjects.index(subj)
+
+            data_normal = self.data_normal[idx] - self.data_normal[idx][:,:1]
+            shoulder_l = np.linalg.norm((data_normal[:,9,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
+            hip_l = np.linalg.norm((data_normal[:,4,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
+            hip2shoulder_l = np.linalg.norm((data_normal[:,4,[0,2]] - data_normal[:,9,[0,2]]), axis=-1)
+            shoulder_r = np.linalg.norm((data_normal[:,12,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
+            hip_r = np.linalg.norm((data_normal[:,1,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
+            hip2shoulder_r = np.linalg.norm((data_normal[:,1,[0,2]] - data_normal[:,12,[0,2]]), axis=-1)
+            trunk_rot_r = hip2shoulder_r**2 / (hip_r * shoulder_r) - hip_r / shoulder_r - shoulder_r / hip_r
+            trunk_rot_l = hip2shoulder_l**2 / (hip_l * shoulder_l) - hip_l / shoulder_l - shoulder_l / hip_l
+
+            A = []
+            B = []
+            for ii in range(30,len(trunk_rot_r)):
+                A.append(np.max(trunk_rot_r[ii-30:ii]) - np.min(trunk_rot_r[ii-30:ii]))
+                B.append(np.max(trunk_rot_l[ii-30:ii]) - np.min(trunk_rot_l[ii-30:ii]))   
+            trunk_rot_r = np.asarray(A)
+            trunk_rot_l = np.asarray(B)
+
+            trunk_rots.append([np.mean(trunk_rot_r), np.mean(trunk_rot_l)])
+            
+        return trunk_rots

@@ -13,3 +13,10 @@ subjects_All_date = ['20210223','20191114','20191120','20191112','20191119','202
                     '20200124','20200127','20200130','20200205','20200206_9339','20200207','20200213','20200214','20200218',
                     '26','20200221','20210706','20210804','20200206_9629','20210811','20191210','20191212','20191218','20200227']
 healthy_controls = ['S08','S20','S27','S25','S26']
+
+# Clinically-informed gait feature names
+clinical_gait_feat_names = ['Step Width','Right Step Length', 'Left Step Length', 'Cadence','Right Foot Clearance', 
+                            'Left Foot Clearance', 'Right Arm Swing', 'Left Arm Swing', 'Right Hip Flexion', 
+                            'Left Hip Flexion', 'Right Knee Flexion','Left Knee Flexion',
+                            'Right Trunk rotation (calculated by right side key points)',
+                            'Left Trunk rotation (calculated by left side key points)', 'Arm swing symmetry']
