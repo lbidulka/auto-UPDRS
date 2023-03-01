@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
 from utils import info
-
+ 
 # TODO: DETERMINE IF MEAN OF FEATURES IS OVER TIME? IF SO, COULD WE USE RAW DATA?
 class gait_processor():
     def __init__(self, ts_path, subjects = info.subjects_All) -> None:
@@ -31,12 +31,10 @@ class gait_processor():
         
         self.feats = self.compute_features(subjects)
         self.thresholds = self._set_thresholds()
-
-
-
+    
     # Use thresholds to get indicators from subject features
     # NB: we may group them according to biomechanical correlation, in the order as in the paper (not Mohsens code)
-    def indicators(self, feats, grouped = False):
+    def compute_indicators(self, feats, grouped = False):
         mins = self.thresholds[0].reshape(-1,1)
         maxs = self.thresholds[1].reshape(-1,1)
 

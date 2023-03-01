@@ -22,7 +22,11 @@ clinical_gait_feat_names = ['Step Width','Right Step Length', 'Left Step Length'
                             'Left Hip Flexion', 'Right Knee Flexion','Left Knee Flexion',
                             'Right Trunk rotation (calculated by right side key points)',
                             'Left Trunk rotation (calculated by left side key points)', 'Arm swing symmetry']
-
+clinical_gait_feat_acronyms = ['SW','RSL', 'LSL', 'Cad','RFC', 'LFC', 'RHP', 'LHP', 
+                               'RHF', 'LHF', 'RKF','LKF', 'RTR', 'LTR', 'ASS']
+# Groups: [Hand, Step, Foot, Hip, Knee, Trunk, Cadence, Arm Swing Symmetry]
+clinical_gait_feat_acronyms_group = [['RHP', 'LHP', 'ASS'], ['RSL', 'LSL'], ['RFC', 'LFC'], 
+                                     ['RHF', 'LHF'], ['RKF', 'LKF'], ['RTR', 'LTR'], 'Cad', 'SW']
 
 # Labels for the PD subject UPDRS scores (1 if UPDRS score > 0)
 Y_true = np.asarray([1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1])
