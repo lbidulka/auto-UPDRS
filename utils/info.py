@@ -1,3 +1,5 @@
+import numpy as np
+
 
 # Subject ID information
 subjects_PD = ['S01','S02','S03','S04','S05','S06','S07','S09',
@@ -20,3 +22,7 @@ clinical_gait_feat_names = ['Step Width','Right Step Length', 'Left Step Length'
                             'Left Hip Flexion', 'Right Knee Flexion','Left Knee Flexion',
                             'Right Trunk rotation (calculated by right side key points)',
                             'Left Trunk rotation (calculated by left side key points)', 'Arm swing symmetry']
+
+
+# Labels for the PD subject UPDRS scores (1 if UPDRS score > 0)
+Y_true = np.asarray([1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1])

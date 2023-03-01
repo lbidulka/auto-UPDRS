@@ -3,15 +3,14 @@ from scipy.signal import savgol_filter, find_peaks
 from utils import info
 
 # TODO: DETERMINE IF MEAN OF FEATURES IS OVER TIME? IF SO, COULD WE USE RAW DATA?
-class gait_features():
-    def __init__(self, subjects, ts_path) -> None:
+class gait_processor():
+    def __init__(self, ts_path, subjects = info.subjects_All) -> None:
         self.subjects = subjects
         self.ts_path = ts_path
         self.feat_names = info.clinical_gait_feat_names
 
         self.data_normal = []
         for idx, subj in enumerate(subjects):
-            # './Weakly_Supervised_Learning/outputs_finetuned/Predictions_'
             data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')
             for ii in range(15):
                 for jj in range(3):
@@ -30,7 +29,85 @@ class gait_features():
 
             self.data_normal.append(np.matmul(data_normal, rotation_matrix))
         
-        # Compute features
+        self.feats = self.compute_features(subjects)
+        self.thresholds = self._set_thresholds()
+
+
+
+    # Use thresholds to get indicators from subject features
+    # NB: we may group them according to biomechanical correlation, in the order as in the paper (not Mohsens code)
+    def indicators(self, feats, grouped = False):
+        mins = self.thresholds[0].reshape(-1,1)
+        maxs = self.thresholds[1].reshape(-1,1)
+
+        ungrouped_indicators = np.logical_and(mins < feats, feats < maxs) * 1
+        ungrouped_indicators[14] = -ungrouped_indicators[14] + 1    # Need to logically invert this one
+
+        if not grouped:
+            return ungrouped_indicators
+
+        indicators = np.zeros((8, feats.shape[1]))
+        # Hand: R_arm_swing, L_arm_swing, arm_sym
+        indicators[0] = np.amax(np.array([ungrouped_indicators[6], ungrouped_indicators[7], ungrouped_indicators[14]]), axis=0)
+        # Step: step_len_R, step_len_L
+        indicators[1] = np.amax(np.array([ungrouped_indicators[1], ungrouped_indicators[2]]), axis=0)
+        # Foot: footlift_R, footlift_L
+        indicators[2] = np.amax(np.array([ungrouped_indicators[4], ungrouped_indicators[5]]), axis=0)
+        # Hip: hip_flex_R, hip_flex_L
+        indicators[3] = np.amax(np.array([ungrouped_indicators[8], ungrouped_indicators[9]]), axis=0)
+        # Knee: knee_flex_R, knee_flex_L
+        indicators[4] = np.amax(np.array([ungrouped_indicators[10], ungrouped_indicators[11]]), axis=0)
+        # Trunk: trunk_rot_R, trunk_rot_L
+        indicators[5] = np.amax(np.array([ungrouped_indicators[12], ungrouped_indicators[13]]), axis=0)
+        # Cadence, Step Width
+        indicators[6] = ungrouped_indicators[3]
+        indicators[7] = ungrouped_indicators[0]
+
+        return indicators
+    
+    # Computed using all healthy controls.
+    #
+    # if x falls within the range of the thresholds, then labeling function outputs 1, else 0
+    #
+    # logic:
+    #
+    #   step_width:  x > max   # TODO: CHECK THIS, IN PAPER IT SAID ONLY CADENCE WAS MAX FUNCTION???
+    #   step_len_R:  x < min
+    #   step_len_L:  x < min
+    #   cadence:      x > max   
+    #   footlift_R:  x < min
+    #   footlift_L:  x < min
+    #   R_arm_swing: x < min
+    #   L_arm_swing: x < min
+    #   hip_flex_R:  x < min
+    #   hip_flex_L:  x < min
+    #   knee_flex_R: x < min
+    #   knee_flex_L: x < min
+    #   trunk_rot_R: x < min
+    #   trunk_rot_L: x < min
+    #   arm_sym:     (x < min) or (max < x)
+    #
+    #   gait_speed: x > max   # TODO: CHECK IF THIS IS ACTUALLY USED???
+    #
+    def _set_thresholds(self):
+
+        control_feats = self.compute_features(info.healthy_controls)
+
+        # Handle most of them
+        thresholds_min = np.ones(len(info.clinical_gait_feat_names)) * -np.inf
+        thresholds_max = np.amin(control_feats[:-2], axis=1) # Dont include gait speed and gait speed var.
+        # Step Width, Cadence
+        thresholds_min[0] = np.amax(control_feats[0])
+        thresholds_max[0] = np.inf
+        thresholds_min[3] = np.amax(control_feats[3])
+        thresholds_max[3] = np.inf
+        # Arm swing symmetry
+        thresholds_min[14] = np.amin(control_feats[14])    # TODO: FIX LOGIC, REVERSE THE MIN AND MAX?
+        thresholds_max[14] = np.amax(control_feats[14])    
+        
+        return np.vstack([thresholds_min, thresholds_max])
+    
+    def compute_features(self, subjects):
         step_widths = np.array(self._step_width(subjects))
         step_lengths = np.array(self._step_lengths(subjects))
         cadences_gaitspeeds_gaitspeedvars = np.array(self._cadence_gaitspeed_gaitspeedvar(subjects))
@@ -40,7 +117,7 @@ class gait_features():
         knee_flexions = np.array(self._knee_flexions(subjects))
         trunk_rots = np.array(self._trunk_rots(subjects))
 
-        self.feats = np.vstack([
+        return np.vstack([
             step_widths,
             step_lengths[:, 0],  # R Step Length
             step_lengths[:, 1],   # L Step Length
@@ -223,6 +300,7 @@ class gait_features():
             knee_flex_r = np.asarray(A)
             knee_flex_l = np.asarray(B)
 
+            # TODO: IS THIS THE RIGHT ORDER? MOHSEN HAD IT SWAPPED (L, R), OPPOSITE TO ALL OTHERS
             knee_flexions.append([np.mean(knee_flex_r), np.mean(knee_flex_l)])
             
         return knee_flexions
