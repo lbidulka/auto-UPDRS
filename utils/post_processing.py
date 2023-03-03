@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
 from utils import info
+import matplotlib.pyplot as plt
  
 # TODO: DETERMINE IF MEAN OF FEATURES IS OVER TIME? IF SO, COULD WE USE RAW DATA?
 class gait_processor():
@@ -31,7 +32,58 @@ class gait_processor():
         
         self.feats = self.compute_features(subjects)
         self.thresholds = self._set_thresholds()
+
+    def plot_preds_by_feats(self, feats, y_preds, thresholds=True):
+        fig_rows = 5
+        fig_cols = 3
+        fig, ax = plt.subplots(fig_rows, fig_cols)
+
+        for ii in range(len(info.clinical_gait_feat_names)):
+            # ax[ii//fig_cols, ii%fig_cols].scatter(self.feats[ii,:], y_vals)
+            ax[ii//fig_cols, ii%fig_cols].scatter(feats[ii,:], y_preds[ii,:])
+            ax[ii//fig_cols, ii%fig_cols].set_title(info.clinical_gait_feat_names[ii])
+            ax[ii//fig_cols, ii%fig_cols].set_xlabel('Feat Val')
+            ax[ii//fig_cols, ii%fig_cols].set_ylabel('UPDRS > 0')
+
+        # if thresholds, add the threshold lines
+        if thresholds:
+            for ii in range(len(info.clinical_gait_feat_names)):
+                ax[ii//fig_cols, ii%fig_cols].axvline(self.thresholds[0][ii], color='b')    # min threshold
+                ax[ii//fig_cols, ii%fig_cols].axvline(self.thresholds[1][ii], color='r')    # max threshold
+        
+        fig.tight_layout()
+        plt.show()
     
+    def plot_feats(self, subjects, thresholds=True):
+        fig_rows = 5
+        fig_cols = 3
+        fig, ax = plt.subplots(fig_rows, fig_cols)
+
+        # y vals are 0 for healthy controls, 1 for PD
+        y_vals = np.ones(len(subjects))
+        for ii, subj in enumerate(subjects):
+            if subj in info.healthy_controls:
+                y_vals[ii] = 0
+        control_feats = self.compute_features(info.healthy_controls)
+        pd_feats = self.compute_features(info.subjects_PD)
+
+        for ii in range(len(info.clinical_gait_feat_names)):
+            # ax[ii//fig_cols, ii%fig_cols].scatter(self.feats[ii,:], y_vals)
+            ax[ii//fig_cols, ii%fig_cols].scatter(control_feats[ii,:], np.zeros((len(control_feats[ii,:]), 1)))
+            ax[ii//fig_cols, ii%fig_cols].scatter(pd_feats[ii,:], np.ones((len(pd_feats[ii,:]), 1)))
+            ax[ii//fig_cols, ii%fig_cols].set_title(info.clinical_gait_feat_names[ii])
+            ax[ii//fig_cols, ii%fig_cols].set_xlabel('Feat Val')
+            ax[ii//fig_cols, ii%fig_cols].set_ylabel('UPDRS > 0')
+
+        # if thresholds, add the threshold lines
+        if thresholds:
+            for ii in range(len(info.clinical_gait_feat_names)):
+                ax[ii//fig_cols, ii%fig_cols].axvline(self.thresholds[0][ii], color='b')    # min threshold
+                ax[ii//fig_cols, ii%fig_cols].axvline(self.thresholds[1][ii], color='r')    # max threshold
+        
+        fig.tight_layout()
+        plt.show()
+        
     # Use thresholds to get indicators from subject features
     # NB: we may group them according to biomechanical correlation, in the order as in the paper (not Mohsens code)
     def compute_indicators(self, feats, grouped = False):
@@ -43,8 +95,11 @@ class gait_processor():
 
         if not grouped:
             return ungrouped_indicators
-
-        indicators = np.zeros((8, feats.shape[1]))
+        return self._group_indicators(ungrouped_indicators)
+    
+    # Group the ungrouped indicators
+    def _group_indicators(self, ungrouped_indicators):
+        indicators = np.zeros((8, ungrouped_indicators.shape[1]))
         # Hand: R_arm_swing, L_arm_swing, arm_sym
         indicators[0] = np.amax(np.array([ungrouped_indicators[6], ungrouped_indicators[7], ungrouped_indicators[14]]), axis=0)
         # Step: step_len_R, step_len_L
@@ -65,9 +120,10 @@ class gait_processor():
     
     # Computed using all healthy controls.
     #
-    # if x falls within the range of the thresholds, then labeling function outputs 1, else 0
+    # if (thresh_min < x < thresh_max): 1
+    # else: 0
     #
-    # logic:
+    # logic, w.r.t data values:
     #
     #   step_width:  x > max   # TODO: CHECK THIS, IN PAPER IT SAID ONLY CADENCE WAS MAX FUNCTION???
     #   step_len_R:  x < min
