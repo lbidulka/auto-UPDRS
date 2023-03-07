@@ -21,7 +21,7 @@ class gait_processor():
     #   - Some subjects have longer time series than others
     #   - Cadence is not properly the timeseries yet, it is based on peaks
     # TODO: CREATE PROPER CADENCE TIMESERIES
-    def plot_feats_ts(self, save_fig=True):
+    def plot_feats_ts(self, show=True, save_fig=True):
         fig_rows = 5 #5
         fig_cols = 3 #3
         fig, ax = plt.subplots(fig_rows, fig_cols, layout="constrained")
@@ -35,7 +35,7 @@ class gait_processor():
             ax[ii//fig_cols, ii%fig_cols].set_xlabel('Timestep')
         fig.legend(loc='right', bbox_to_anchor=(1, 0.5))
         if save_fig: plt.savefig(self.fig_outpath + 'feats_ts.png', dpi=500)
-        plt.show()
+        if show: plt.show()
 
     def plot_preds_by_feats(self, feats, y_preds, thresholds=True):
         fig_rows = 5
