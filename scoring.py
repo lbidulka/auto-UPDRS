@@ -3,10 +3,8 @@ import argparse
 from utils import info, post_processing
 from sklearn.metrics import accuracy_score
 import numpy as np
-from data.body.time_series.body_dataset import body_ts_loader
+from data.body.body_dataset import body_ts_loader, get_2D_keypoints_dict
 import models.body_pose as body_nets
-# import model_confidences    # Uncomment this if reloading one of Mohsens models
-
 
 def naive_voting(gait_processor):
     # Use thresholds to get predictions for PD subjects by majority voting
@@ -68,9 +66,17 @@ def body_tasks(input_args):
     # fix_model_setup(input_args.models_path + 'body_pose/Mohsens/model_lifter.pt', 
     #                 input_args.models_path + 'body_pose/model_lifter.pt')
 
-    # Test out pose extractor 
+    # Test out pose extractor on alphapose dummy data
+    body_2D_proposals = get_2D_keypoints_dict(input_args.data_path)
+    kpts_2D = torch.as_tensor(body_2D_proposals["S01"]["test"]['pos'][3], dtype=torch.float).unsqueeze(0)
+    conf_2D = torch.as_tensor(body_2D_proposals["S01"]["test"]['conf'][3], dtype=torch.float).unsqueeze(0)
+
     body_3Dpose_lifter = body_nets.Lifter()
     body_3Dpose_lifter.load_state_dict(torch.load(input_args.models_path + 'body_pose/model_lifter.pt'))
+    body_3Dpose_lifter.eval()
+
+    x_pose, xc = body_3Dpose_lifter(kpts_2D, conf_2D)
+    print("preds.shape: ", x_pose.shape)
     
     # Load "free_form_oval" extracted 3D keypoints timeseries
     # ts_path = input_args.data_path + 'body/time_series/outputs_finetuned/'

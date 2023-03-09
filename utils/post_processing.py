@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
 from utils import info
-from data.body.time_series.body_dataset import body_ts_loader
+from data.body.body_dataset import body_ts_loader
 import matplotlib.pyplot as plt
 
 # For processing extracted 3D body keypoints 
