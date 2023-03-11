@@ -5,9 +5,10 @@ import json
 
 # For loading the subject 2D keypoints from the alphapose json outputs
 # TODO: REPLACE PLACEHOLDER WITH REAL LOADING ONCE DATASET IS SETUP
-def get_2D_keypoints_dict(data_path, tasks, channels):
+def get_2D_keypoints_dict(data_path, tasks, channels, frame=0):
     # TODO: HANDLE FRAME SELECTION, CURRENTLY JUST GRABS FIRST FRAME
     keypoints_PD = {}
+    frame = frame
     for task in tasks:
         for subj in ['9769']: # TODO: MAP TO S01, S02, etc.
             keypoints_PD[subj] = {}
@@ -16,7 +17,7 @@ def get_2D_keypoints_dict(data_path, tasks, channels):
                 with open(data_path + subj + "/" + task + '_CH' + str(cam_idx) + '/alphapose-results.json') as f:
                     alphapose_results = json.load(f)
                 # keypoints entries have 3 values: x, y, confidence. And we only want 15 of the Halpe-26 keypoints
-                keypoints = np.array(alphapose_results[0]["keypoints"]).reshape(-1,3)   # TODO: DETERMINE HOW TO HANDLE MULTIPLE PEOPLE
+                keypoints = np.array(alphapose_results[frame]["keypoints"]).reshape(-1,3)   # TODO: DETERMINE HOW TO HANDLE MULTIPLE PEOPLE
                 keypoints_PD[subj][task]['pos'][cam_idx] = keypoints[:,:2][5:20].reshape(-1)  # xy
                 keypoints_PD[subj][task]['conf'][cam_idx] = keypoints[:,2][5:20].reshape(-1)  # conf
     return keypoints_PD

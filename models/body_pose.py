@@ -7,6 +7,7 @@ class Lifter(nn.Module):
     Note that output keypoints are in canonical (world) space and have 
     a format of (3, 15), xyz by 15 keypoints:
 
+    TODO: VERIFY THIS ORDERING, I THINK THE LEGS ARE SWAPPED
         0:  pelvis
         1:  right hip
         2:  right knee
