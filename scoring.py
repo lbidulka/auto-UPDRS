@@ -1,10 +1,12 @@
 import torch
+import cv2
 import argparse
-from utils import info, post_processing, helpers
+from utils import info, post_processing, helpers, pose_visualization
 from sklearn.metrics import accuracy_score
 import numpy as np
 from data.body.body_dataset import body_ts_loader, get_2D_keypoints_dict
 import models.body_pose as body_nets
+
 
 # Full body tracking tasks (e.g. gait analysis)
 def body_tasks(input_args):
@@ -14,7 +16,7 @@ def body_tasks(input_args):
 
     # Test out pose extractor on alphapose preds data
     subjects = ['9769']
-    tasks = ['tug_stand_walk_sit']
+    tasks = ['free_form_oval'] #['tug_stand_walk_sit']
     channels = [3]
 
     body_2D_proposals = get_2D_keypoints_dict(input_args.data_path, tasks=tasks, channels=channels)
@@ -24,9 +26,16 @@ def body_tasks(input_args):
     body_3Dpose_lifter = body_nets.Lifter()
     body_3Dpose_lifter.load_state_dict(torch.load(input_args.models_path + 'body_pose/model_lifter.pt'))
     body_3Dpose_lifter.eval()
+    pred_kpts_3D, pred_cam_angles = body_3Dpose_lifter(kpts_2D, conf_2D)
 
-    x_pose, xc = body_3Dpose_lifter(kpts_2D, conf_2D)
-    print("preds.shape: ", x_pose.shape)
+    kpts_2D = kpts_2D.detach().numpy()
+    pred_kpts_3D = pred_kpts_3D.detach().numpy()
+    pred_cam_angles = pred_cam_angles.detach().numpy()
+
+    
+    # Project back from canonical camera space to original camera space, then visualize
+    kpts_3d_camspace = np.matmul(cv2.Rodrigues(pred_cam_angles[0])[0], pred_kpts_3D.reshape(-1, 3, 15))
+    pose_visualization.visualize_pose(kpts_3d_camspace[0], kpts_2D=kpts_2D[0], num_dims=3, save_fig=True, out_fig_path="./auto_UPDRS/outputs/")
     
     # Load "free_form_oval" extracted 3D keypoints timeseries
     # ts_path = input_args.data_path + 'body/time_series/outputs_finetuned/'

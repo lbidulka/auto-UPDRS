@@ -3,6 +3,26 @@ import torch.nn as nn
 
 
 class Lifter(nn.Module):
+    '''
+    Note that output keypoints are in canonical (world) space and have 
+    a format of (3, 15), xyz by 15 keypoints:
+
+        0:  pelvis
+        1:  right hip
+        2:  right knee
+        3:  right ankle
+        4:  left hip
+        5:  left knee
+        6:  left ankle
+        7:  neck
+        8:  head
+        9:  right shoulder
+        10: right elbow
+        11: right hand
+        12: left shoulder
+        13: left elbow
+        14: left hand
+    '''
     def __init__(self):
         super(Lifter, self).__init__()
         num_joints=15

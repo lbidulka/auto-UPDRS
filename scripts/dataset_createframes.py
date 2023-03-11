@@ -6,7 +6,6 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--videos_path", default="/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/", help="input video dataset path", type=str)
     parser.add_argument("--outframes_path", default="/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/", help="output frame data path", type=str)
-    # parser.add_argument("--outframes_path", default="auto_UPDRS/outputs/", help="output frame data path", type=str)
     return parser.parse_args()
 
 '''
@@ -16,11 +15,11 @@ def main():
     input_args = get_args()
     
     subj = "9769"
-    task = "tug_stand_walk_sit_"
+    task = "free_form_oval_" #"tug_stand_walk_sit_"
     ch = "CH3"
 
     in_file = input_args.videos_path + subj + '/vids/' + task + ch + '.mp4'
-    out_path = input_args.outframes_path + subj + '/' + task + ch + '/'
+    out_path = input_args.outframes_path + subj + '/' + task + ch + '/frames/'
 
     # Make sure its all good to go
     if not os.path.exists(in_file):

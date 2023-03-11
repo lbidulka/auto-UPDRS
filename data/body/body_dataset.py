@@ -6,6 +6,7 @@ import json
 # For loading the subject 2D keypoints from the alphapose json outputs
 # TODO: REPLACE PLACEHOLDER WITH REAL LOADING ONCE DATASET IS SETUP
 def get_2D_keypoints_dict(data_path, tasks, channels):
+    # TODO: HANDLE FRAME SELECTION, CURRENTLY JUST GRABS FIRST FRAME
     keypoints_PD = {}
     for task in tasks:
         for subj in ['9769']: # TODO: MAP TO S01, S02, etc.
