@@ -56,70 +56,73 @@ def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3
             ax.scatter(kpts_3D[0, :], kpts_3D[1, :], s=scatter_size, c=scatter_colour)
 
 def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r', 'g', 'b'], linewidth=0.5, 
-                     plt_scatter=False, scatter_size=0.5, scatter_colour='b'):
+                     plt_scatter=False, scatter_size=1.5, scatter_colour='b'):
     '''
     Plot the 2D skeleton on the given axis.
 
     args:
-        kpts_2D: 2D keypoints (30), xy xy xy ...
+        kpts_2D: 2D keypoints (30), xxx ... yyy
         proj_plot: if True, plot on 3D axis, else plot on 2D axis                 # Not working yet, low priority
         plt_scatter: if True, also plot the keypoints on top of the skeleton
     '''
     # Skeleton sequences for 2D plotting
-    all_pts = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28]
-    LA = [26, 0, 4, 8]    # L Arm:  Neck, LShoulder, LElbow, LWrist
-    RA = [26, 2, 6, 10]   # R Arm:  Neck, RShoulder, RElbow, RWrist
-    LL = [28, 12, 16, 20] # L Leg:  Hip, LHip, LKnee, LAnkle
-    RL = [28, 14, 18, 22] # R Leg:  Hip, RHip, RKnee, RAnkle
-    T = [24, 26, 28]      # Torso:  Head, Neck, Hip
+    all_pts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    LA = [13, 0, 2, 4]  # L Arm:  Neck, LShoulder, LElbow, LWrist
+    RA = [13, 1, 3, 5]  # R Arm:  Neck, RShoulder, RElbow, RWrist
+    LL = [14, 6, 8, 10] # L Leg:  Hip, LHip, LKnee, LAnkle
+    RL = [14, 7, 9, 11] # R Leg:  Hip, RHip, RKnee, RAnkle
+    T = [12, 13, 14]    # Torso:  Head, Neck, Hip
+
+    xs = kpts_2D[all_pts]
+    ys = kpts_2D[[x + len(all_pts) for x in all_pts]]
 
     # For plotting on 3D axis
     if proj_plot:
-        ax.plot(kpts_2D[LA], kpts_2D[[x+1 for x in LA]], zs=z_off, zdir=zdir, color=colours[2], linewidth=linewidth)
-        ax.plot(kpts_2D[RA], kpts_2D[[x+1 for x in RA]], zs=z_off, zdir=zdir, color=colours[0], linewidth=linewidth)
-        ax.plot(kpts_2D[LL], kpts_2D[[x+1 for x in LL]], zs=z_off, zdir=zdir, color=colours[2], linewidth=linewidth)
-        ax.plot(kpts_2D[RL], kpts_2D[[x+1 for x in RL]], zs=z_off, zdir=zdir, color=colours[0], linewidth=linewidth)
-        ax.plot(kpts_2D[T], kpts_2D[[x+1 for x in T]], zs=z_off, zdir=zdir, color=colours[1], linewidth=linewidth)
+        ax.plot(xs[LA], ys[LA], zs=z_off, zdir=zdir, color=colours[2], linewidth=linewidth)
+        ax.plot(xs[RA], ys[RA], zs=z_off, zdir=zdir, color=colours[0], linewidth=linewidth)
+        ax.plot(xs[LL], ys[LL], zs=z_off, zdir=zdir, color=colours[2], linewidth=linewidth)
+        ax.plot(xs[RL], ys[RL], zs=z_off, zdir=zdir, color=colours[0], linewidth=linewidth)
+        ax.plot(xs[T], ys[T], zs=z_off, zdir=zdir, color=colours[1], linewidth=linewidth)
         # TODO: GET 3D SCATTER PLOT ON 2D SUB-AX WORKING (LOW PRIORITY)
         if plt_scatter:
-            ax.scatter(kpts_2D[all_pts], kpts_2D[[x+1 for x in all_pts]], 
+            ax.scatter(kpts_2D[all_pts], kpts_2D[[x + len(all_pts) for x in all_pts]], 
                        zs=z_off, zdir=zdir, s=scatter_size, c=scatter_colour)
     # For plotting on 2D axis
     else:
-        ax.plot(kpts_2D[LA], kpts_2D[[x+1 for x in LA]], color=colours[2], linewidth=linewidth)
-        ax.plot(kpts_2D[RA], kpts_2D[[x+1 for x in RA]], color=colours[0], linewidth=linewidth)
-        ax.plot(kpts_2D[LL], kpts_2D[[x+1 for x in LL]], color=colours[2], linewidth=linewidth)
-        ax.plot(kpts_2D[RL], kpts_2D[[x+1 for x in RL]], color=colours[0], linewidth=linewidth)
-        ax.plot(kpts_2D[T], kpts_2D[[x+1 for x in T]], color=colours[1], linewidth=linewidth)
+        ax.plot(xs[LA], ys[LA], color=colours[2], linewidth=linewidth)
+        ax.plot(xs[RA], ys[RA], color=colours[0], linewidth=linewidth)
+        ax.plot(xs[LL], ys[LL], color=colours[2], linewidth=linewidth)
+        ax.plot(xs[RL], ys[RL], color=colours[0], linewidth=linewidth)
+        ax.plot(xs[T], ys[T], color=colours[1], linewidth=linewidth)
         if plt_scatter:
-            ax.scatter(kpts_2D[all_pts], kpts_2D[[x+1 for x in all_pts]], 
+            ax.scatter(xs, ys, 
                        s=scatter_size, c=scatter_colour)
 
-def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=2, save_fig=False, show_fig=False, out_fig_path=None):
+def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_fig=False, out_fig_path=None, normed_in=False):
     '''
     Visualization of the estimated pose
     
     input 2D keypoint          idx (x,y)
     ----------------------  ---------
-        {0,  "LShoulder"},  -> 0, 1
-        {1,  "RShoulder"},  -> 2, 3
-        {2,  "LElbow"},     -> 4, 5
-        {3,  "RElbow"},     -> 6, 7
-        {4,  "LWrist"},     -> 8, 9
-        {5, "RWrist"},      -> 10, 11
-        {6, "LHip"},        -> 12, 13
-        {7, "RHip"},        -> 14, 15
-        {8, "LKnee"},       -> 16, 17
-        {9, "Rknee"},       -> 18, 19
-        {10, "LAnkle"},     -> 20, 21
-        {11, "RAnkle"},     -> 22, 23
-        {12,  "Head"},      -> 24, 25
-        {13,  "Neck"},      -> 26, 27
-        {14,  "Hip"},       -> 28, 29
+        {0,  "LShoulder"},  -> 0, 15
+        {1,  "RShoulder"},  -> 1, 16
+        {2,  "LElbow"},     -> 2, 17
+        {3,  "RElbow"},     -> 3, 18
+        {4,  "LWrist"},     -> 4, 19
+        {5, "RWrist"},      -> 5, 20
+        {6, "LHip"},        -> 6, 21
+        {7, "RHip"},        -> 7, 22
+        {8, "LKnee"},       -> 8, 23
+        {9, "Rknee"},       -> 9, 24
+        {10, "LAnkle"},     -> 10, 25
+        {11, "RAnkle"},     -> 11, 26
+        {12,  "Head"},      -> 12, 27
+        {13,  "Neck"},      -> 13, 28
+        {14,  "Hip"},       -> 14, 29
 
     Args:
         kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints
-        kpts_2D: 2D keypoints (30), xy xy xy ...
+        kpts_2D: 2D keypoints (30), xxx ... yyy
         num_dims: 2 or 3, if 2 then just plot 2D keypoints, if 3 then plot 3D keypoints and 2D keypoints
     '''
     if kpts_2D is None and kpts_3D is None:
@@ -140,18 +143,25 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=2, save_fig=False, show_
             ax.set_title('Subject 2D Pose')
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
-            ax.set_xlim(0,3840)
-            ax.set_ylim(2160,0)
+            ax.invert_yaxis()
+            if not normed_in:
+                ax.set_xlim(0,3840)
+                ax.set_ylim(2160,0) 
+
         if kpts_3D is not None:
             ax = fig.add_subplot(nrows, 1, 2, projection='3d')
             plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
-            ax.view_init(elev=20., azim=-110.)
+            if not normed_in:
+                ax.view_init(elev=20., azim=-110.)
+            else:
+                ax.view_init(elev=20., azim=90.)
             ax.set_title('Subject 3D Pose')
             ax.set_xlabel('X')
             ax.set_ylabel('Z')
-            ax.set_zlabel('Y')      
-            ax.set_xlim(min(kpts_3D[0]), max(kpts_3D[0]*2))
-            ax.set_zlim(max(kpts_3D[1]), min(kpts_3D[1]))
+            ax.set_zlabel('Y')
+            ax.invert_zaxis()
+            # ax.set_xlim(min(kpts_3D[0]), max(kpts_3D[0]*2))
+            # ax.set_zlim(max(kpts_3D[1]), min(kpts_3D[1]))
     
     elif num_dims == 2:
         ax = fig.add_subplot()
@@ -160,8 +170,10 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=2, save_fig=False, show_
         ax.set_title('Subject 2D Pose')
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
-        ax.set_xlim(0,3840)
-        ax.set_ylim(2160,0)
+        ax.invert_yaxis()
+        if not normed_in:
+                ax.set_xlim(0,3840)
+                ax.set_ylim(2160,0) 
 
     # Show/Save the figure
     if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path + 'pose.png', dpi=500, bbox_inches='tight')
@@ -188,8 +200,8 @@ def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=
     scale_p3d = np.sqrt(np.square(kp_3D[:2, :]).sum() / num_joints*2)
     kp3d_scaled = kp_3D[:2, :] / scale_p3d
 
-    plot_2D_skeleton(kp2d_scaled, ax, plt_scatter=True, proj_plot=False)
-    plot_3D_skeleton(kp3d_scaled, ax, plt_scatter=True, dims=2)
+    plot_2D_skeleton(kp2d_scaled, ax, plt_scatter=True, proj_plot=False, scatter_size=20)
+    plot_3D_skeleton(kp3d_scaled, ax, plt_scatter=True, dims=2, scatter_size=20)
 
     ax.set_title('Backbone and Lifter-reproj 2D Poses')
     ax.invert_yaxis()
@@ -198,4 +210,10 @@ def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=
     # Show/Save the figure
     if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path + 'pose-reproj.png', dpi=500, bbox_inches='tight')
     if show_fig: plt.show()
+
+def pose2d_video():
+    '''
+    Create video of 2D pose predictions
+    '''
+    pass
     

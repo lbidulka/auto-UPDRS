@@ -9,7 +9,7 @@ class gait_processor():
     def __init__(self, body_ts_loader, fig_outpath) -> None:
         self.fig_outpath = fig_outpath
         self.subjects = body_ts_loader.subjects
-        self.data_normal = body_ts_loader.data_normal
+        self.data_normal = body_ts_loader.data_normal   # (num_subjects, num_frames, num_joints, 3)
         self.feat_names = info.clinical_gait_feat_names
         self.feats_avg = self.compute_features(self.subjects, ts=False)
         self.feats_ts = self.compute_features(self.subjects, ts=True)
@@ -209,7 +209,7 @@ class gait_processor():
         ])
 
     # Helper to apply filtering to time series data
-    def _filter_1d(self, data, filter=None, win_len=2, ord=3):
+    def _filter_1d(self, data, filter=None, win_len=3, ord=3):
         if filter is None:
             return data
         if filter == 'moving_avg':
@@ -225,7 +225,7 @@ class gait_processor():
             bone_length = np.linalg.norm((self.data_normal[idx][:,1] - self.data_normal[idx][:,4]),axis=-1)
             step_width /= bone_length
             step_widths.append(self._filter_1d(step_width, filter) if ts else 
-                                np.mean(self._filter_1d(step_width, "moving_avg", 30, 1)))
+                                np.mean(self._filter_1d(step_width, "moving_avg", 29, 1)))
         return step_widths
     
     def _step_lengths(self, subjects, ts=False, filter=True):

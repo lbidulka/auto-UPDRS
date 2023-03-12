@@ -3,10 +3,13 @@ from scipy.signal import savgol_filter
 import numpy as np
 import json
 
-# For loading the subject 2D keypoints from the alphapose json outputs
+# For loading the raw subject 2D keypoints from the alphapose json outputs
 # TODO: REPLACE PLACEHOLDER WITH REAL LOADING ONCE DATASET IS SETUP
-def get_2D_keypoints_dict(data_path, tasks, channels, frame=0):
+def get_2D_keypoints_dict(data_path, tasks, channels, frame=0, norm_cam=False):
     # TODO: HANDLE FRAME SELECTION, CURRENTLY JUST GRABS FIRST FRAME
+    #
+    # Should load all frames for a given task, and then normalize over all frames for a given channel
+    #
     keypoints_PD = {}
     frame = frame
     for task in tasks:
@@ -18,8 +21,18 @@ def get_2D_keypoints_dict(data_path, tasks, channels, frame=0):
                     alphapose_results = json.load(f)
                 # keypoints entries have 3 values: x, y, confidence. And we only want 15 of the Halpe-26 keypoints
                 keypoints = np.array(alphapose_results[frame]["keypoints"]).reshape(-1,3)   # TODO: DETERMINE HOW TO HANDLE MULTIPLE PEOPLE
-                keypoints_PD[subj][task]['pos'][cam_idx] = keypoints[:,:2][5:20].reshape(-1)  # xy
-                keypoints_PD[subj][task]['conf'][cam_idx] = keypoints[:,2][5:20].reshape(-1)  # conf
+                kpts = keypoints[:,:2][5:20]  # (ktps, xy)
+                conf = keypoints[:,2][5:20]  # (kpts, conf)
+
+                # Normalize the keypoints
+                # TODO: HOW IS THIS SUPPOSED TO WORK? I THINK IT SHOULD NORM OVER ALL FRAMES FOR A CHANNEL
+                if norm_cam:
+                    kpts = kpts - kpts[-1, :]    # TODO: WHAT COORD SHOULD I SUBTRACT? PELVIS I THINK?
+                    kpts /= np.linalg.norm(kpts, ord=2, axis=0, keepdims=True)   # TODO: WHAT AXIS SHOULD BE NORMED?
+
+                # Store the keypoints
+                keypoints_PD[subj][task]['pos'][cam_idx] = kpts.reshape(-1, order='F')
+                keypoints_PD[subj][task]['conf'][cam_idx] = conf.reshape(-1, order='F')
     return keypoints_PD
 
 # For loading the extracted 3D body keypoints from the UPDRS dataset
@@ -31,13 +44,13 @@ class body_ts_loader():
 
         self.data_normal = []
         for idx, subj in enumerate(subjects):
-            data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')
+            data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')     # (num_frames, num_joints, 3)
             for ii in range(15):
                 for jj in range(3):
                     data_normal[:,ii,jj] = savgol_filter(data_normal[:,ii,jj], 11, 3)   # Smoothing
             
-            x_vec = data_normal[:,1] - data_normal[:,4]
-            y_vec = data_normal[:,7] - data_normal[:,0]
+            x_vec = data_normal[:,1] - data_normal[:,4]      # R Hip - L Hip
+            y_vec = data_normal[:,7] - data_normal[:,0]      # Neck - Pelvis
             x_vec /= np.linalg.norm(x_vec, keepdims=True, axis=-1)
             y_vec /= np.linalg.norm(y_vec, keepdims=True, axis=-1)
             z_vec = np.cross(x_vec, y_vec)
