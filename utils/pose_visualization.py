@@ -3,7 +3,7 @@ import numpy as np
 
 
 def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3, 
-                     plt_scatter=False, scatter_size=1, scatter_colour='r'):
+                     plt_scatter=False, scatter_size=1, scatter_colour='r', scatter_label='Reproj 3D'):
     '''
     Plot the 3D skeleton on the given axis, in 3D or with weak projection to 2D
 
@@ -44,7 +44,7 @@ def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3
         ax.plot(kpts_3D[0, RL], kpts_3D[2, RL], kpts_3D[1, RL], color=colours[0], linewidth=linewidth)
         ax.plot(kpts_3D[0, T], kpts_3D[2, T], kpts_3D[1, T], color=colours[1], linewidth=linewidth)
         if plt_scatter:
-            ax.scatter(kpts_3D[0, :], kpts_3D[2, :], kpts_3D[1, :], s=scatter_size, c=scatter_colour)
+            ax.scatter(kpts_3D[0, :], kpts_3D[2, :], kpts_3D[1, :], s=scatter_size, c=scatter_colour, label=scatter_label)
     # weak perspective projection
     elif dims == 2:
         ax.plot(kpts_3D[0, LA], kpts_3D[1, LA], color=colours[2], linewidth=linewidth) 
@@ -53,10 +53,10 @@ def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3
         ax.plot(kpts_3D[0, RL], kpts_3D[1, RL], color=colours[0], linewidth=linewidth)
         ax.plot(kpts_3D[0, T], kpts_3D[1, T], color=colours[1], linewidth=linewidth)
         if plt_scatter:
-            ax.scatter(kpts_3D[0, :], kpts_3D[1, :], s=scatter_size, c=scatter_colour)
+            ax.scatter(kpts_3D[0, :], kpts_3D[1, :], s=scatter_size, c=scatter_colour, label=scatter_label)
 
 def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r', 'g', 'b'], linewidth=0.5, 
-                     plt_scatter=False, scatter_size=1.5, scatter_colour='b'):
+                     plt_scatter=False, scatter_size=1.5, scatter_colour='b', scatter_label='Backbone 2D'):
     '''
     Plot the 2D skeleton on the given axis.
 
@@ -85,8 +85,7 @@ def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r
         ax.plot(xs[T], ys[T], zs=z_off, zdir=zdir, color=colours[1], linewidth=linewidth)
         # TODO: GET 3D SCATTER PLOT ON 2D SUB-AX WORKING (LOW PRIORITY)
         if plt_scatter:
-            ax.scatter(kpts_2D[all_pts], kpts_2D[[x + len(all_pts) for x in all_pts]], 
-                       zs=z_off, zdir=zdir, s=scatter_size, c=scatter_colour)
+            ax.scatter(xs, ys, zs=z_off, zdir=zdir, s=scatter_size, c=scatter_colour, label=scatter_label)
     # For plotting on 2D axis
     else:
         ax.plot(xs[LA], ys[LA], color=colours[2], linewidth=linewidth)
@@ -95,8 +94,7 @@ def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r
         ax.plot(xs[RL], ys[RL], color=colours[0], linewidth=linewidth)
         ax.plot(xs[T], ys[T], color=colours[1], linewidth=linewidth)
         if plt_scatter:
-            ax.scatter(xs, ys, 
-                       s=scatter_size, c=scatter_colour)
+            ax.scatter(xs, ys, s=scatter_size, c=scatter_colour, label=scatter_label)
 
 def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_fig=False, out_fig_path=None, normed_in=False):
     '''
@@ -147,19 +145,23 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_
             if not normed_in:
                 ax.set_xlim(0,3840)
                 ax.set_ylim(2160,0) 
+            else:
+                ax.set_xlim(-2,2)
 
         if kpts_3D is not None:
             ax = fig.add_subplot(nrows, 1, 2, projection='3d')
             plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
-            if not normed_in:
-                ax.view_init(elev=20., azim=-110.)
-            else:
-                ax.view_init(elev=20., azim=90.)
             ax.set_title('Subject 3D Pose')
             ax.set_xlabel('X')
             ax.set_ylabel('Z')
             ax.set_zlabel('Y')
             ax.invert_zaxis()
+            if not normed_in:
+                ax.view_init(elev=20., azim=-110.)
+            else:
+                ax.view_init(elev=20., azim=-120.)
+                ax.set_xlim(-4, 4)
+            
             # ax.set_xlim(min(kpts_3D[0]), max(kpts_3D[0]*2))
             # ax.set_zlim(max(kpts_3D[1]), min(kpts_3D[1]))
     
@@ -176,6 +178,7 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_
                 ax.set_ylim(2160,0) 
 
     # Show/Save the figure
+    fig.legend()
     if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path + 'pose.png', dpi=500, bbox_inches='tight')
     if show_fig: plt.show()
 
@@ -187,7 +190,7 @@ def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=
 
     args:
         kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints
-        kpts_2D: 2D keypoints (30), xy xy xy ...
+        kpts_2D: 2D keypoints (30), xxx ... yyy
     '''
     fig = plt.figure(layout='constrained')
     ax = fig.add_subplot()
@@ -205,9 +208,9 @@ def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=
 
     ax.set_title('Backbone and Lifter-reproj 2D Poses')
     ax.invert_yaxis()
-    ax.set_xlim(min(kp3d_scaled[0]), max(kp3d_scaled[0]*2))
 
     # Show/Save the figure
+    fig.legend()
     if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path + 'pose-reproj.png', dpi=500, bbox_inches='tight')
     if show_fig: plt.show()
 
