@@ -1,5 +1,7 @@
+import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 
 def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3, 
@@ -96,7 +98,7 @@ def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r
         if plt_scatter:
             ax.scatter(xs, ys, s=scatter_size, c=scatter_colour, label=scatter_label)
 
-def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_fig=False, out_fig_path=None, normed_in=False):
+def visualize_pose(kpts_3D=None, kpts_2D=None, save_fig=False, show_fig=False, out_fig_path=None, normed_in=False):
     '''
     Visualization of the estimated pose
     
@@ -121,7 +123,6 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_
     Args:
         kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints
         kpts_2D: 2D keypoints (30), xxx ... yyy
-        num_dims: 2 or 3, if 2 then just plot 2D keypoints, if 3 then plot 3D keypoints and 2D keypoints
     '''
     if kpts_2D is None and kpts_3D is None:
         print("ERROR: No keypoints to visualize!")
@@ -134,48 +135,32 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, num_dims=3, save_fig=False, show_
         nrows += 1
 
     fig = plt.figure(layout='constrained', )
-    if num_dims == 3:
-        if kpts_2D is not None:
-            ax = fig.add_subplot(nrows, 1, 1)
-            plot_2D_skeleton(kpts_2D, ax, proj_plot=False, plt_scatter=True)
-            ax.set_title('Subject 2D Pose')
-            ax.set_xlabel('X')
-            ax.set_ylabel('Y')
-            ax.invert_yaxis()
-            if not normed_in:
-                ax.set_xlim(0,3840)
-                ax.set_ylim(2160,0) 
-            else:
-                ax.set_xlim(-2,2)
-
-        if kpts_3D is not None:
-            ax = fig.add_subplot(nrows, 1, 2, projection='3d')
-            plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
-            ax.set_title('Subject 3D Pose')
-            ax.set_xlabel('X')
-            ax.set_ylabel('Z')
-            ax.set_zlabel('Y')
-            ax.invert_zaxis()
-            if not normed_in:
-                ax.view_init(elev=20., azim=-110.)
-            else:
-                ax.view_init(elev=20., azim=-120.)
-                ax.set_xlim(-4, 4)
-            
-            # ax.set_xlim(min(kpts_3D[0]), max(kpts_3D[0]*2))
-            # ax.set_zlim(max(kpts_3D[1]), min(kpts_3D[1]))
-    
-    elif num_dims == 2:
-        ax = fig.add_subplot()
-        if kpts_2D is not None:
-            plot_2D_skeleton(kpts_2D, ax, proj_plot=False, plt_scatter=True)
+    if kpts_2D is not None:
+        ax = fig.add_subplot(nrows, 1, 1)
+        plot_2D_skeleton(kpts_2D, ax, proj_plot=False, plt_scatter=True)
         ax.set_title('Subject 2D Pose')
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.invert_yaxis()
         if not normed_in:
-                ax.set_xlim(0,3840)
-                ax.set_ylim(2160,0) 
+            ax.set_xlim(0,3840)
+            ax.set_ylim(2160,0) 
+        else:
+            ax.set_xlim(-2,2)
+
+    if kpts_3D is not None:
+        ax = fig.add_subplot(nrows, 1, 2, projection='3d')
+        plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
+        ax.set_title('Subject 3D Pose')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Z')
+        ax.set_zlabel('Y')
+        ax.invert_zaxis()
+        if not normed_in:
+            ax.view_init(elev=20., azim=-110.)
+        else:
+            ax.view_init(elev=20., azim=-120.)
+            ax.set_xlim(-4, 4)
 
     # Show/Save the figure
     fig.legend()
@@ -214,9 +199,36 @@ def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=
     if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path + 'pose-reproj.png', dpi=500, bbox_inches='tight')
     if show_fig: plt.show()
 
-def pose2d_video():
+def pose2d_video(kpts_2D, outpath, normed_in=True):
     '''
-    Create video of 2D pose predictions
+    Create video of 2D pose predictions using ffmpeg
+
+    args:
+        kp_2D: 2D keypoints (num_frames, 30), (frames, xxx ... yyy)
     '''
-    pass
+    fig = plt.figure(layout='constrained')
+    ax = fig.add_subplot()
+
+    # Create the pose images
+    print("Writing images...")
+    for idx, pose in enumerate(kpts_2D):
+        ax.cla()
+        ax.set_title('Subject 2D Pose')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.invert_yaxis()
+        if not normed_in:
+            ax.set_xlim(0,3840)
+            ax.set_ylim(2160,0) 
+        else:
+            ax.set_xlim(-2,2)
+        plot_2D_skeleton(pose, ax, proj_plot=False, plt_scatter=True)
+        plt.savefig(outpath + 'imgs/pose_' + str(idx) + ".png", dpi=500, bbox_inches='tight')
+    
+    # Create the video using ffmpeg
+    print("Compiling video...")
+    # TODO: ADJUST FPS FOR THE OUTLIER SUBJECT CAPTURES
+    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 'imgs/pose_%1d.png -pix_fmt yuv420p ' + outpath + 'pose_2d.mp4')
+    print("Done!")
+    
     
