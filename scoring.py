@@ -86,12 +86,11 @@ def body_tasks(input_args):
     subjects = ['9769']
     tasks = ['free_form_oval'] #['tug_stand_walk_sit']
     channels = [3]
-    frame= 1 *2  # *2 because from CH3 we are also detecting the evaluator in each frame
     norm_cam = True    # TODO: FIX THIS NORMING BUSINESS MOHSEN USED
 
-    body_2D_proposals = get_2D_keypoints_dict(input_args.data_path, tasks=tasks, channels=channels, frame=frame, norm_cam=norm_cam)
-    kpts_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['pos'][channels[0]], dtype=torch.float).unsqueeze(0)
-    conf_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['conf'][channels[0]], dtype=torch.float).unsqueeze(0)
+    body_2D_proposals = get_2D_keypoints_dict(input_args.data_path, tasks=tasks, channels=channels, norm_cam=norm_cam)
+    kpts_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['pos'][channels[0]], dtype=torch.float)
+    conf_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['conf'][channels[0]], dtype=torch.float)
 
     body_3Dpose_lifter = body_nets.Lifter()
     body_3Dpose_lifter.load_state_dict(torch.load(input_args.models_path + 'body_pose/model_lifter.pt'))
@@ -101,9 +100,9 @@ def body_tasks(input_args):
         pred_kpts_3D, pred_cam_angles = body_3Dpose_lifter(kpts_2D, conf_2D)
 
     kpts_2D = kpts_2D.detach().numpy()
-    pred_kpts_3D = pred_kpts_3D #.detach().numpy()
-    pred_cam_angles = pred_cam_angles #.detach().numpy()
-    
+    pred_kpts_3D = pred_kpts_3D 
+    pred_cam_angles = pred_cam_angles 
+
     # Project back from canonical camera space to original camera space 
     kpts_3d_camspace = rodrigues(pred_cam_angles)[0] @ pred_kpts_3D.reshape(-1, 3, 15)
 
