@@ -206,7 +206,7 @@ def pose2d_video(kpts_2D, outpath, normed_in=True):
     args:
         kp_2D: 2D keypoints (num_frames, 30), (frames, xxx ... yyy)
     '''
-    fig = plt.figure(layout='constrained')
+    fig = plt.figure()
     ax = fig.add_subplot()
 
     # Create the pose images
@@ -223,12 +223,45 @@ def pose2d_video(kpts_2D, outpath, normed_in=True):
         else:
             ax.set_xlim(-2,2)
         plot_2D_skeleton(pose, ax, proj_plot=False, plt_scatter=True)
-        plt.savefig(outpath + 'imgs/pose_' + str(idx) + ".png", dpi=500, bbox_inches='tight')
+        plt.savefig(outpath + 'imgs/pose_2d/' + str(idx) + ".png", dpi=500)
     
     # Create the video using ffmpeg
     print("Compiling video...")
     # TODO: ADJUST FPS FOR THE OUTLIER SUBJECT CAPTURES
-    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 'imgs/pose_%1d.png -pix_fmt yuv420p ' + outpath + 'pose_2d.mp4')
+    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 'imgs/pose_2d/%1d.png -pix_fmt yuv420p ' + outpath + 'pose_2d.mp4')
+    print("Done!")
+
+def pose3d_video(kpts_3D, outpath, normed_in=True):
+    '''
+    Create video of 3D pose predictions using ffmpeg
+
+    args:
+        kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints
+    '''
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+
+    # Create the pose images
+    print("Writing images...")
+    for idx, pose in enumerate(kpts_3D):
+        ax.cla()
+        ax.set_title('Subject 3D Pose Prediction')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Z')
+        ax.set_zlabel('Y')
+        ax.invert_zaxis()
+        if not normed_in:
+            ax.view_init(elev=20., azim=-120.)
+        else:
+            ax.view_init(elev=20., azim=-120.)
+            ax.set_xlim(-4, 4)
+        plot_3D_skeleton(pose, ax, plt_scatter=True)
+        plt.savefig(outpath + 'imgs/' + str(idx) + ".png", dpi=500)
+    
+    # Create the video using ffmpeg
+    print("Compiling video...")
+    # TODO: ADJUST FPS FOR THE OUTLIER SUBJECT CAPTURES
+    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 'imgs/%1d.png -pix_fmt yuv420p ' + outpath + 'pose_3d.mp4')
     print("Done!")
     
     

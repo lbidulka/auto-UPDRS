@@ -118,6 +118,12 @@ def body_tasks(input_args):
     pose_visualization.visualize_pose(pred_aligned[0], kpts_2D=kpts_2D[0], save_fig=True, out_fig_path="./auto_UPDRS/outputs/", normed_in=norm_cam)
     pose_visualization.visualize_reproj(pred_aligned[0], kpts_2D[0], save_fig=True, out_fig_path="./auto_UPDRS/outputs/")
 
+    # Output 2D & 3D keypoints, so we can make a video
+    np.save("./auto_UPDRS/outputs/3D_kpts.npy", pred_aligned)
+    # np.save("./auto_UPDRS/outputs/vids_2d/2D_kpts.npy", kpts_2D)
+    # pose_visualization.pose2d_video(kpts_2D, outpath="./auto_UPDRS/outputs/vids_2d/")
+    pose_visualization.pose3d_video(pred_aligned, outpath="./auto_UPDRS/outputs/vids_3d/")
+
     # ----------------------------------------------
     # Load "free_form_oval" extracted 3D keypoints timeseries
     # ----------------------------------------------
@@ -140,7 +146,6 @@ def get_args():
 
 def main():
     input_args = get_args()
-
     body_tasks(input_args)    
     
 if __name__ == '__main__':
