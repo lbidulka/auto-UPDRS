@@ -1,12 +1,11 @@
 import torch
 import cv2
 import argparse
-from utils import info, post_processing, helpers, pose_visualization, metrics
+from utils import info, post_processing, helpers, pose_visualization, metrics, pose_utils
 from sklearn.metrics import accuracy_score
 import numpy as np
 from data.body.body_dataset import body_ts_loader, get_2D_keypoints_dict
 import models.body_pose as body_nets
-from pytorch3d.transforms import so3_exponential_map as rodrigues
 
 
 # Fix the model setup by only saving the state_dict if needed
@@ -97,45 +96,29 @@ def body_tasks(input_args):
     body_3Dpose_lifter.eval()
 
     with torch.no_grad():
-        pred_kpts_3D, pred_cam_angles = body_3Dpose_lifter(kpts_2D, conf_2D)
+        pred_kpts_3d, pred_cam_angles = body_3Dpose_lifter(kpts_2D, conf_2D)
 
     kpts_2D = kpts_2D.detach().numpy()
-    pred_kpts_3D = pred_kpts_3D 
+    pred_kpts_3d = pred_kpts_3d 
     pred_cam_angles = pred_cam_angles 
 
-    # Project back from canonical camera space to original camera space 
-    kpts_3d_camspace = rodrigues(pred_cam_angles)[0] @ pred_kpts_3D.reshape(-1, 3, 15)
-
-    rot_poses = torch.transpose(kpts_3d_camspace, 2, 1) # swap to do procrustes
-    rot_poses -= rot_poses[:, :1]   # center the poses on hip
-    pred_aligned = metrics.procrustes_torch(rot_poses[0:1], rot_poses)  # Aligns to first pose?
-    pred_aligned = np.transpose(pred_aligned, [0, 2, 1])  # swap back
-
-    # need to swap the L and R legs for some reason... TODO: FIND OUT IF LIFTER OUTPUT ORDER IS AS INTENDED
-    pred_aligned[:, :, 1:4], pred_aligned[:, :, 4:7] = pred_aligned[:, :, 4:7], pred_aligned[:, :, 1:4].copy()
+    # Align the 3D pose, reproject if we want, and swap the legs (for now...)
+    kpts_3d_aligned, _ = pose_utils.reshape_and_align(pred_kpts_3d, pred_cam_angles, reproj=False, swap_legs=True)
 
     # Visualize the pose results
-    pose_visualization.visualize_pose(pred_aligned[0], kpts_2D=kpts_2D[0], save_fig=True, out_fig_path="./auto_UPDRS/outputs/", normed_in=norm_cam)
-    pose_visualization.visualize_reproj(pred_aligned[0], kpts_2D[0], save_fig=True, out_fig_path="./auto_UPDRS/outputs/")
+    pose_visualization.visualize_pose(kpts_3d_aligned[0], kpts_2D=kpts_2D[0], 
+                                      save_fig=True, out_fig_path="./auto_UPDRS/outputs/", normed_in=norm_cam)
+    # pose_visualization.visualize_reproj(kpts_3d_aligned[0], kpts_2D[0], save_fig=True, out_fig_path="./auto_UPDRS/outputs/")  # Make sure to use reproj'ed preds
 
     # Output 2D & 3D keypoints, so we can make a video
-    np.save("./auto_UPDRS/outputs/3D_kpts.npy", pred_aligned)
+    np.save("./auto_UPDRS/outputs/vids_3d/3D_kpts.npy", kpts_3d_aligned)
     # np.save("./auto_UPDRS/outputs/vids_2d/2D_kpts.npy", kpts_2D)
     # pose_visualization.pose2d_video(kpts_2D, outpath="./auto_UPDRS/outputs/vids_2d/")
-    pose_visualization.pose3d_video(pred_aligned, outpath="./auto_UPDRS/outputs/vids_3d/")
+    # pose_visualization.pose3d_video(kpts_3d_aligned, outpath="./auto_UPDRS/outputs/vids_3d/")
 
-    # ----------------------------------------------
-    # Load "free_form_oval" extracted 3D keypoints timeseries
-    # ----------------------------------------------
-    
-    # ts_path = './auto_UPDRS/data/body/time_series/outputs_finetuned/'
-    # gait_plots_outpath = input_args.output_path + 'plots/'
-    # gait_loader = body_ts_loader(ts_path)   # All subjects
-    # gait_processor = post_processing.gait_processor(gait_loader, gait_plots_outpath)
+    # Create some videos
+    helpers.make_vids(dims=3, mohsens_preds=False, subjs=["S02", "S03", "S04", "S05", "S06"], outdir="auto_UPDRS/outputs/")
 
-    # print(len(gait_processor.data_normal))
-    # print(gait_processor.data_normal[0].shape)
-    # print(gait_processor.data_normal[0][0])
 
 def get_args():
     parser = argparse.ArgumentParser()

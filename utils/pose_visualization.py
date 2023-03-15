@@ -2,6 +2,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from tqdm import tqdm
 
 
 def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3, 
@@ -98,7 +99,9 @@ def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r
         if plt_scatter:
             ax.scatter(xs, ys, s=scatter_size, c=scatter_colour, label=scatter_label)
 
-def visualize_pose(kpts_3D=None, kpts_2D=None, save_fig=False, show_fig=False, out_fig_path=None, normed_in=False):
+def visualize_pose(kpts_3D=None, kpts_2D=None, 
+                   normed_in=False, reproj=False, 
+                   save_fig=False, show_fig=False, out_fig_path=None):
     '''
     Visualization of the estimated pose
     
@@ -121,8 +124,10 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, save_fig=False, show_fig=False, o
         {14,  "Hip"},       -> 14, 29
 
     Args:
-        kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints
+        kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints in cam space or canonical (world) space
         kpts_2D: 2D keypoints (30), xxx ... yyy
+        normed_in: if True, the input 3d keypoints are normalized
+        reproj: if True, the input 3d keypoints are reprojected to cam space
     '''
     if kpts_2D is None and kpts_3D is None:
         print("ERROR: No keypoints to visualize!")
@@ -138,7 +143,7 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, save_fig=False, show_fig=False, o
     if kpts_2D is not None:
         ax = fig.add_subplot(nrows, 1, 1)
         plot_2D_skeleton(kpts_2D, ax, proj_plot=False, plt_scatter=True)
-        ax.set_title('Subject 2D Pose')
+        ax.set_title('Subject 2D Pose (Cam space)')
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.invert_yaxis()
@@ -151,15 +156,15 @@ def visualize_pose(kpts_3D=None, kpts_2D=None, save_fig=False, show_fig=False, o
     if kpts_3D is not None:
         ax = fig.add_subplot(nrows, 1, 2, projection='3d')
         plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
-        ax.set_title('Subject 3D Pose')
+        title = 'Subject 3D Pose (Cam space)' if reproj else 'Subject 3D Pose (Canonical space)'
+        ax.set_title(title)
         ax.set_xlabel('X')
         ax.set_ylabel('Z')
         ax.set_zlabel('Y')
         ax.invert_zaxis()
-        if not normed_in:
-            ax.view_init(elev=20., azim=-110.)
-        else:
-            ax.view_init(elev=20., azim=-120.)
+        ax.view_init(elev=20., azim=-110.)
+
+        if normed_in:
             ax.set_xlim(-4, 4)
 
     # Show/Save the figure
@@ -228,40 +233,44 @@ def pose2d_video(kpts_2D, outpath, normed_in=True):
     # Create the video using ffmpeg
     print("Compiling video...")
     # TODO: ADJUST FPS FOR THE OUTLIER SUBJECT CAPTURES
-    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 'imgs/pose_2d/%1d.png -pix_fmt yuv420p ' + outpath + 'pose_2d.mp4')
+    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 
+              'imgs/pose_2d/%1d.png -pix_fmt yuv420p ' + 
+              outpath + 'pose_2d.mp4')
+    os.system('rm ' + outpath + 'imgs/*.png')   # cleanup the frames
     print("Done!")
 
-def pose3d_video(kpts_3D, outpath, normed_in=True):
+def pose3d_video(kpts_3D, outpath, normed_in=True, vid_name='pose_3d.mp4'):
     '''
     Create video of 3D pose predictions using ffmpeg
 
     args:
-        kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints
+        kpts_3D: 3D keypoints (num_frames, 3, 15), num_frames by xyz by 15 keypoints
     '''
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
 
     # Create the pose images
-    print("Writing images...")
-    for idx, pose in enumerate(kpts_3D):
+    print("  Writing images to " + outpath + "imgs/  ...")
+    for idx, pose in enumerate(tqdm(kpts_3D)):
         ax.cla()
         ax.set_title('Subject 3D Pose Prediction')
         ax.set_xlabel('X')
         ax.set_ylabel('Z')
         ax.set_zlabel('Y')
         ax.invert_zaxis()
-        if not normed_in:
-            ax.view_init(elev=20., azim=-120.)
-        else:
-            ax.view_init(elev=20., azim=-120.)
-            ax.set_xlim(-4, 4)
+        ax.view_init(elev=20., azim=-120.)
+        if normed_in:
+            ax.set_xlim(-3, 3)
+            ax.set_ylim(-1, 1)
+            ax.set_zlim(2, -2)            
         plot_3D_skeleton(pose, ax, plt_scatter=True)
         plt.savefig(outpath + 'imgs/' + str(idx) + ".png", dpi=500)
     
     # Create the video using ffmpeg
-    print("Compiling video...")
+    print("  Compiling video...")
     # TODO: ADJUST FPS FOR THE OUTLIER SUBJECT CAPTURES
-    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 'imgs/%1d.png -pix_fmt yuv420p ' + outpath + 'pose_3d.mp4')
-    print("Done!")
-    
-    
+    os.system('ffmpeg -y -framerate 15 -i ' + outpath + 
+              'imgs/%1d.png -pix_fmt yuv420p ' + 
+              outpath + vid_name)
+    os.system('rm ' + outpath + 'imgs/*.png')   # cleanup the frames
+    print("  Done compiling 3D video to "+ outpath + vid_name + " !")
