@@ -3,17 +3,34 @@ import argparse
 import os
 import fnmatch
 from tqdm import tqdm
+import subprocess
+
+class cd:
+    """
+    Context manager for changing the current working directory, 
+    from:  https://stackoverflow.com/questions/431684/equivalent-of-shell-cd-command-to-change-the-working-directory
+    """
+    def __init__(self, newPath):
+        self.newPath = os.path.expanduser(newPath)
+
+    def __enter__(self):
+        self.savedPath = os.getcwd()
+        os.chdir(self.newPath)
+
+    def __exit__(self, etype, value, traceback):
+        os.chdir(self.savedPath)
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--videos_path", default="/mnt/CAMERA-data/CAMERA/CAMERA visits/Mobility Visit/Study Subjects/", help="input video dataset path", type=str)
-    parser.add_argument("--outframes_path", default="/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/", help="output frame data path", type=str)
+    parser.add_argument("--frames_path", default="/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/", help="output frame data path", type=str)
     return parser.parse_args()
 
-'''
-Converts videos to a sequence of png frames
-'''
+
 def main():
+    '''
+    Gets AlphaPose 2D pose predictions from sequences of png frames
+    '''
     input_args = get_args()
 
     # Subject ID mapping -- I HATE THIS BUT I DONT WANNA DEAL WITH MODULE IMPORTING
@@ -44,16 +61,16 @@ def main():
     chs = ["003", "004"]
 
 
-    print("Looking in: ", input_args.videos_path)
+    print("Looking in: ", input_args.frames_path)
     # iterate over the subjects_ALL_id_dict dict of (S_id: id) pairs
     for S_id, id in subjects_ALL_id_dict.items():
         for ch in chs:
-            print("Processing ", S_id, "CH_" + ch, end='')
+            print("Trying ", S_id, "CH_" + ch, end='')
             # Construct paths
             subj_idx = subjects_All.index(S_id)
+            # in_path_end = str(id) + '/' + task + '/' + ch + '/frames/'
+            # in_frames = input_args.frames_path + in_path_end
             in_file_end = subjects_All_date[subj_idx] + '/' + str(id)
-
-            out_path = input_args.outframes_path + str(id) + '/' + task + '/' + ch + '/frames/'
 
             # Deal with bad formatting :/
             if os.path.exists(input_args.videos_path + in_file_end + '/Video Data/'):
@@ -61,7 +78,7 @@ def main():
             elif os.path.exists(input_args.videos_path + in_file_end + '/Video_Data/'):
                 in_file_end += '/Video_Data/'
             else:
-                print("  ERR its a really badly formatted one... : ", S_id, id, subjects_All_date[subj_idx])
+                print("\n  ERR its a really badly formatted one... : ", S_id, id, subjects_All_date[subj_idx])
                 break
                 
             in_file_end += 'CH_' + ch + '/'
@@ -69,34 +86,42 @@ def main():
             for file in os.listdir(input_args.videos_path + in_file_end):
                 if fnmatch.fnmatch(file, '*' + task + '*.mp4'):
                     in_file_end += file
+            # Check that the input vid is valid (is mp4)
+            if in_file_end[-4:] != '.mp4':
+                print("\n  ERR input file not found (bad name formatting?): ", in_file_end)
+                break
 
             in_file = input_args.videos_path + in_file_end
+
+            out_path = input_args.frames_path + str(id) + '/' + task + '/'
             
-            print(" from: ", in_file_end, "...")
+            print(" from: ", in_file_end)
 
             # Make sure its all good to go
-            if not os.path.exists(in_file):
-                print("  ERR Input file not found: ", in_file_end)
+            # if len(os.listdir(in_frames)) == 0:
+            #     print("  ERR Input frames folder empty, skipping: ", in_file_end)
             if not os.path.exists(out_path):
                 print("Creating output directory: ", out_path)
                 os.makedirs(out_path)
+            if not os.path.exists(in_file):
+                print("  ERR Input file not found: ", in_file_end)
             else:
-                capture = cv2.VideoCapture(in_file)
-                if not capture.isOpened():
-                    print("  ERR Cannot open input file: ", in_file_end)
-                    break
-
-                # Process frames
-                # TODO: LIMIT TO FIRST 2 MINS, AND MAKE SURE THE 30FPS ONES USE 30FPS INSTEAD OF 15FPS
-                # TODO: DO THE 2 MINS EVEN CAPTURE RELEVANT MOTION?
-                # TODO: DOWNSAMPLE THE IMAGES FROM 4k?
-                for frame_nr in tqdm(range(0, 15 * 30)):
-                    ret, frame = capture.read()
-                    if ret: 
-                        cv2.imwrite(out_path + '/' + str(frame_nr) + '.png', frame, [cv2.IMWRITE_PNG_COMPRESSION, 0])   # Probably should swap to jpg....
-                    else:
-                        break
-                capture.release()
+                # Run AlphaPose on the frames
+                with cd("./auto_UPDRS/AlphaPose"):
+                    os.system("python3 scripts/demo_inference.py \
+                                --cfg configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml \
+                                --checkpoint pretrained_models/halpe26_fast_res50_256x192.pth \
+                                --sp \
+                                --gpu 0,1 \
+                                --video \"" + in_file + "\" \
+                                --maxframes " + str(15 * 60 * 2) + " \
+                                --outdir \"" + out_path + "\"")
+                                # --qsize 512 \
+                                # --posebatch 32 \
+                                # --indir " + in_frames +"\
+                    # rename the output file
+                    os.system("mv " + out_path + "alphapose-results.json " + \
+                              out_path + "CH" + ch +"_alphapose-results" + ".json")
                 print("  Success.")
 
 if __name__ == '__main__':
