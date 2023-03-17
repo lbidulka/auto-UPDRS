@@ -60,8 +60,6 @@ def main():
     task = "free_form_oval" #"tug_stand_walk_sit_"
     chs = ["003", "004"]
 
-
-    print("Looking in: ", input_args.frames_path)
     # iterate over the subjects_ALL_id_dict dict of (S_id: id) pairs
     for S_id, id in subjects_ALL_id_dict.items():
         for ch in chs:
@@ -114,15 +112,15 @@ def main():
                                 --sp \
                                 --gpu 0,1 \
                                 --video \"" + in_file + "\" \
-                                --maxframes " + str(15 * 60 * 2) + " \
-                                --outdir \"" + out_path + "\"")
+                                --maxframes " + str(15 * 10) + # 2 minutes is what Mohsen used
+                                " --outdir \"" + out_path + "\"")
                                 # --qsize 512 \
                                 # --posebatch 32 \
                                 # --indir " + in_frames +"\
                     # rename the output file
                     os.system("mv " + out_path + "alphapose-results.json " + \
                               out_path + "CH" + ch +"_alphapose-results" + ".json")
-                print("  Success.")
+                print("  Success.\n")
 
 if __name__ == '__main__':
     main()

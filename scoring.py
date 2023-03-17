@@ -4,8 +4,9 @@ import argparse
 from utils import info, post_processing, helpers, pose_visualization, metrics, pose_utils
 from sklearn.metrics import accuracy_score
 import numpy as np
-from data.body.body_dataset import body_ts_loader, get_2D_keypoints_dict
+from data.body.body_dataset import body_ts_loader
 import models.body_pose as body_nets
+import pickle
 
 
 # Fix the model setup by only saving the state_dict if needed
@@ -82,14 +83,18 @@ def body_tasks(input_args):
     # ----------------------------------------------
     # Test out pose extractor on alphapose preds data
     # ----------------------------------------------
-    subjects = ['9769']
+    subjects = ['S03']
     tasks = ['free_form_oval'] #['tug_stand_walk_sit']
-    channels = [3]
+    chs = ["003", "004"]
     norm_cam = True    # TODO: FIX THIS NORMING BUSINESS MOHSEN USED
 
-    body_2D_proposals = get_2D_keypoints_dict(input_args.data_path, tasks=tasks, channels=channels, norm_cam=norm_cam)
-    kpts_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['pos'][channels[0]], dtype=torch.float)
-    conf_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['conf'][channels[0]], dtype=torch.float)
+    # body_2D_proposals = get_2D_keypoints_dict(input_args.data_path, tasks=tasks, channels=channels, norm_cam=norm_cam)
+    body_2d_kpts_path = "/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/" + tasks[0] + "_2D_kpts.pickle"
+    with open(body_2d_kpts_path, 'rb') as handle:
+        body_2D_proposals = pickle.load(handle)
+
+    kpts_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['pos'][chs[0]], dtype=torch.float)
+    conf_2D = torch.as_tensor(body_2D_proposals[subjects[0]][tasks[0]]['conf'][chs[0]], dtype=torch.float)
 
     body_3Dpose_lifter = body_nets.Lifter()
     body_3Dpose_lifter.load_state_dict(torch.load(input_args.models_path + 'body_pose/model_lifter.pt'))
@@ -111,13 +116,13 @@ def body_tasks(input_args):
     # pose_visualization.visualize_reproj(kpts_3d_aligned[0], kpts_2D[0], save_fig=True, out_fig_path="./auto_UPDRS/outputs/")  # Make sure to use reproj'ed preds
 
     # Output 2D & 3D keypoints, so we can make a video
-    np.save("./auto_UPDRS/outputs/vids_3d/3D_kpts.npy", kpts_3d_aligned)
+    # np.save("./auto_UPDRS/outputs/vids_3d/3D_kpts.npy", kpts_3d_aligned)
     # np.save("./auto_UPDRS/outputs/vids_2d/2D_kpts.npy", kpts_2D)
     # pose_visualization.pose2d_video(kpts_2D, outpath="./auto_UPDRS/outputs/vids_2d/")
     # pose_visualization.pose3d_video(kpts_3d_aligned, outpath="./auto_UPDRS/outputs/vids_3d/")
 
     # Create some videos
-    helpers.make_vids(dims=3, mohsens_preds=False, subjs=["S02", "S03", "S04", "S05", "S06"], outdir="auto_UPDRS/outputs/")
+    # helpers.make_vids(dims=3, mohsens_preds=False, subjs=["S02", "S03", "S04", "S05", "S06"], outdir="auto_UPDRS/outputs/")
 
 
 def get_args():

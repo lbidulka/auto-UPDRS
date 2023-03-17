@@ -3,42 +3,48 @@ from scipy.signal import savgol_filter
 import numpy as np
 import json
 
-# For loading the raw subject 2D keypoints from the alphapose json outputs
 # TODO: REPLACE PLACEHOLDER WITH REAL LOADING ONCE DATASET IS SETUP
-def get_2D_keypoints_dict(data_path, tasks, channels, norm_cam=False):
-    # TODO: HANDLE FRAME SELECTION, CURRENTLY JUST GRABS FIRST FRAME
-    #
-    # Should load all frames for a given task, and then normalize over all frames for a given channel
-    #
-    keypoints_PD = {}
-    for task in tasks:
-        for subj in ['9769']: # TODO: MAP TO S01, S02, etc.
-            keypoints_PD[subj] = {}
-            keypoints_PD[subj][task] = {'pos': {}, 'conf': {}}
-            for cam_idx in channels:
-                with open(data_path + subj + "/" + task + '_CH' + str(cam_idx) + '/alphapose-results.json') as f:
-                    alphapose_results = json.load(f)
-                
-                # For now, just grab first entry for each frame as we always have 2 people in the frame
-                # TODO: DETERMINE HOW TO HANDLE MULTIPLE PEOPLE MORE ROBUSTLY
-                num_frames = len(alphapose_results) // 2
-                idxs = [int(fr*2) for fr in range(num_frames)]  
-                keypoints = np.array([np.array(alphapose_results[i]["keypoints"]).reshape(-1,3) for i in idxs])
+def get_2D_keypoints_from_alphapose_dict(data_path, cam_idx, subj, task, kpts_dict=None, norm_cam=True):
+    '''
+    Loads the subject 2D keypoints from the alphapose json outputs
+    '''
+    # Initialize the dictionary components as needed
+    if kpts_dict is None:
+        kpts_dict = {}
+    if subj not in kpts_dict:
+        kpts_dict[subj] = {}
+    if task not in kpts_dict[subj]:
+        kpts_dict[subj][task] = {'pos': {}, 'conf': {}}
 
-                # keypoints entries have 3 values: x, y, confidence. And we only want 15 of the Halpe-26 keypoints
-                kpts = keypoints[:, :, :2][:, 5:20]  # (frames, ktps, xy)
-                conf = keypoints[:, :, 2][:, 5:20]  # (frames, kpts, conf)
+    if cam_idx in kpts_dict[subj][task]['pos'] or cam_idx in kpts_dict[subj][task]['conf']:
+        print('  ERR: Camera indexed data already exists in dict!')
+        return kpts_dict
 
-                # Normalize the keypoints
-                # TODO: HOW IS THIS SUPPOSED TO WORK? I THINK IT SHOULD NORM OVER ALL FRAMES FOR A CHANNEL
-                if norm_cam:
-                    kpts = kpts - kpts[:, -1:, :]    # TODO: WHAT COORD SHOULD I SUBTRACT? PELVIS I THINK?
-                    kpts /= np.linalg.norm(kpts, ord=2, axis=1, keepdims=True)   # TODO: WHAT AXIS SHOULD BE NORMED?
+    # Get in there
+    with open(data_path) as f:
+        alphapose_results = json.load(f)
+    
+    # For now, just grab first entry for each frame as we always have 2 people in the frame
+    # TODO: DETERMINE HOW TO HANDLE MULTIPLE PEOPLE MORE ROBUSTLY
+    num_frames = len(alphapose_results) // 2
+    idxs = [int(fr*2) for fr in range(num_frames)]  
+    keypoints = np.array([np.array(alphapose_results[i]["keypoints"]).reshape(-1,3) for i in idxs])
 
-                # Store the keypoints
-                keypoints_PD[subj][task]['pos'][cam_idx] = kpts.reshape((kpts.shape[0], -1), order='F')
-                keypoints_PD[subj][task]['conf'][cam_idx] = conf.reshape((kpts.shape[0], -1), order='F')
-    return keypoints_PD
+    # keypoints entries have 3 values: x, y, confidence. And we only want 15 of the Halpe-26 keypoints
+    kpts = keypoints[:, :, :2][:, 5:20]  # (frames, ktps, xy)
+    conf = keypoints[:, :, 2][:, 5:20]  # (frames, kpts, conf)
+
+    # Normalize the keypoints
+    # TODO: HOW IS THIS SUPPOSED TO WORK? I THINK IT SHOULD NORM OVER ALL FRAMES FOR A CHANNEL?
+    if norm_cam:
+        kpts = kpts - kpts[:, -1:, :]    # TODO: ZERO TO PELVIS?
+        kpts /= np.linalg.norm(kpts, ord=2, axis=1, keepdims=True)   # TODO: WHAT AXIS SHOULD BE NORMED?
+
+    # Store the keypoints
+    kpts_dict[subj][task]['pos'][cam_idx] = kpts.reshape((kpts.shape[0], -1), order='F')
+    kpts_dict[subj][task]['conf'][cam_idx] = conf.reshape((kpts.shape[0], -1), order='F')
+
+    return kpts_dict
 
 # For loading the extracted 3D body keypoints from the UPDRS dataset
 class body_ts_loader():
