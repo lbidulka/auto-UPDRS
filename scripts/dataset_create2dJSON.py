@@ -26,6 +26,7 @@ class cd:
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--out_path", default="./auto_UPDRS/data/body/2d_proposals/", help="output frame data path", type=str)
     parser.add_argument("--dataset_path", default="/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/", help="output frame data path", type=str)
     return parser.parse_args()
 
@@ -79,7 +80,7 @@ def main():
                 print("  Successfully loaded alphapose data.")
 
     # Pickle the 2d keypoints dict
-    out_name = input_args.dataset_path + task + "_2D_kpts.pickle"
+    out_name = input_args.out_path + task + "_2D_kpts.pickle"
     print("Saving to ", out_name)
 
     with open(out_name, 'wb') as handle:

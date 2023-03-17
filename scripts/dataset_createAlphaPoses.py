@@ -112,7 +112,7 @@ def main():
                                 --sp \
                                 --gpu 0,1 \
                                 --video \"" + in_file + "\" \
-                                --maxframes " + str(15 * 10) + # 2 minutes is what Mohsen used
+                                --maxframes " + str(15 * 10) + # 15fps (15 * 60 * 2 = 2 minutes is what Mohsen used)
                                 " --outdir \"" + out_path + "\"")
                                 # --qsize 512 \
                                 # --posebatch 32 \
