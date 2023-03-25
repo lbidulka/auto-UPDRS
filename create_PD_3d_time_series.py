@@ -85,9 +85,9 @@ def get_preds(input_args):
     # Options
     outpath = input_args.outpath
     lifter_model_path = input_args.model_ckpt_path
-    camspace_reproj = input_args.camspace_reproj
+    camspace_out = input_args.camspace_out
 
-    print('camspace_reproj: ', camspace_reproj)
+    print('camspace_reproj: ', camspace_out)
 
     # loading the lifting network
     model_eval = model_confidences.Lifter().cuda()
@@ -100,7 +100,7 @@ def get_preds(input_args):
 
         for cam_name_idx, cam in enumerate(all_cams):
             # Output paths
-            preds_outpath = (outpath + cam_ch_names[cam_name_idx] + '/finetune_3d_camspace/') if camspace_reproj else \
+            preds_outpath = (outpath + cam_ch_names[cam_name_idx] + '/finetune_3d_camspace/') if camspace_out else \
                             (outpath + cam_ch_names[cam_name_idx] + '/finetune_3d_canonspace/')
 
             if not os.path.exists(preds_outpath):
@@ -125,7 +125,6 @@ def get_preds(input_args):
 
                     # poses_2d is a dictionary. It needs to be reshaped to be propagated through the model.
                     cnt = 0
-                    # Note we only use the first camera...
                     for b in range(poses_2d[cam].shape[0]):
                         inp_poses[cnt] = poses_2d[cam][b]
                         inp_confidences[cnt] = sample['confidences'][0][b]
@@ -136,26 +135,22 @@ def get_preds(input_args):
                     pred_cam_angles = pred[1]
 
                     # Reproject to camera if we want
-                    if camspace_reproj:
-                        # angles are in axis angle notation
-                        # use Rodrigues formula (Equations 3 and 4) to get the rotation matrix
+                    if camspace_out:
+                        # angles are in axis angle notation, use Rodrigues formula (Equations 3 and 4) to get the rotation matrix
                         pred_rot = rodrigues(pred_cam_angles)
-
                         # reproject to original cameras after applying rotation to the canonical poses
-                        rot_poses = pred_rot.matmul(pred_poses.reshape(-1, 3, num_joints))
-                        rot_poses = torch.transpose(rot_poses,2,1)
-
-                        rot_poses -= rot_poses[:,:1]
-                        pred_aligned = procrustes_torch(rot_poses[0:1], rot_poses)
-                        pred_save.append(pred_aligned)
+                        pred_poses = pred_rot.matmul(pred_poses.reshape(-1, 3, num_joints))
                     else:
-                        pred_poses = pred_poses.cpu().reshape(-1, 3, 15)    # (B, XYZ, 15)
-                        pred_poses = np.transpose(pred_poses, [0, 2, 1])
+                        pred_poses = pred_poses.reshape(-1, 3, 15)    # (B, XYZ, 15)
+                    
+                    out_preds = np.transpose(pred_poses.cpu(), [0, 2, 1])
 
+                    # Zero preds to hip and align to first frame if we want
+                    if input_args.align_preds:
                         pred_poses -= pred_poses[:,:1]
-                        pred_aligned = procrustes_torch(pred_poses[0:1], pred_poses)
+                        out_preds = procrustes_torch(pred_poses[0:1], pred_poses)
 
-                        pred_save.append(pred_poses)
+                    pred_save.append(out_preds)
                 
                 print(subj[0], end=', ')
                 # print(pred_save[0][0,:1], end=', ')
@@ -172,9 +167,11 @@ def get_args():
     # Data
     parser.add_argument("--AP_data_path", default="data/body/2d_proposals/mohsen_data_PD.npz", help="path to alphapose 2d preds data")
     parser.add_argument("--model_ckpt_path", default="model_checkpoints/body_pose/Mohsens/model_pretrain.pt", help="path to model checkpoint")
+    # Output
     parser.add_argument("--outpath", default="data/body/3d_time_series/", help="path to save predictions")
-    # Options
-    parser.add_argument("--camspace_reproj", default=True, help="reproject to camera space?", type=bool)
+    # Output Options
+    parser.add_argument("--camspace_out", default=False, help="transform outputs from canonical to camera space?", type=bool)
+    parser.add_argument("--align_preds", default=False, help="zero to hip and do procrustes on preds?", type=bool)
     return parser.parse_args()
 
 def main():
