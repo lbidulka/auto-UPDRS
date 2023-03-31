@@ -1,11 +1,20 @@
 # auto_UPDRS
 3D body and handpose keypoint extraction from videos of subjects performing UPDRS tasks & post-processing to evaluate their motion features and give UPDRS scores.
 
+## Uncertnet Project (Bootstrapping 3D pose estimation with multi view data)
+---
+We can improve unsupervised 3D pose estimation since it uses multi-view data for training. We train an "uncertnet" network to predict the prediction error (to the triangulated pseudo-GT) of the 3D pose estimator, given predicted 3D kpts and the view_id. The uncertnet outputs are then used to do a weighted combo of the multi-view predictions for a given frame. 
+- 'uncertnet_experiments.py' contains high level control of the experiments
+- 'uncertnet/' contains the model wrapper, network, and dataset handling code for the experiments
+- 'data/body/h36m/uncertnet' contains the numpy data files for training and testing
+
+
 ## 3D Body Pose Prediction
+---
 
 2D Proposal Network: [AlphaPose](https://github.com/MVIG-SJTU/AlphaPose) (Halpe Dataset, 26 keypoints)
 
-### Setup
+### Setup:
 1. Clone the [AlphaPose](https://github.com/MVIG-SJTU/AlphaPose) repo into "auto_UPDRS":
 ```
 cd auto_UPDRS
