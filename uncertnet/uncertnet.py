@@ -15,12 +15,14 @@ class uncert_net(torch.nn.Module):
         # TODO: 2 branches, one for poses, one for kpts and one for cam_id. Make branches embed to same size then combine, put through some end layers and output
         # TODO: Incorporate confidences
         # TODO: Think about the relative size of the cam_id (1) and the kpts (15*4)...
+
+        in_dim = config.num_kpts*3
         if config.use_confs:
-            # input: [num_kpts * (x,y,z, conf), cam_id]
-            self.l1 = nn.Linear(config.num_kpts*4 + 1, 512)
-        else:
-            # input: [num_kpts * (x,y,z), cam_id]
-            self.l1 = nn.Linear(config.num_kpts*3 + 1, 512)  
+            in_dim += config.num_kpts
+        if config.use_camID:
+            in_dim += 1
+
+        self.l1 = nn.Linear(in_dim, 512)  
         self.bn1 = nn.BatchNorm1d(512)
         self.l2 = nn.Linear(512, 512)
         self.bn2 = nn.BatchNorm1d(512)
@@ -60,7 +62,10 @@ class uncert_net_wrapper():
             for batch_idx, data in enumerate(self.dataset.train_loader):
                 (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 # Combine the data into one tensor and get model pred
-                x = torch.cat((cam_ids, pred_poses,), dim=1)
+                if self.config.use_camID:
+                    x = torch.cat((cam_ids, pred_poses,), dim=1)
+                else:
+                    x = pred_poses
                 pred = self.net(x)
                 # Get distance from lifter preds to triang preds, and compare to model pred
                 rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
@@ -82,7 +87,10 @@ class uncert_net_wrapper():
                 for batch_idx, data in enumerate(self.dataset.val_loader):
                     (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
                     # Combine the data into one tensor and get model pred
-                    x = torch.cat((cam_ids, pred_poses,), dim=1)
+                    if self.config.use_camID:
+                        x = torch.cat((cam_ids, pred_poses,), dim=1)
+                    else:
+                        x = pred_poses
                     pred = self.net(x)
                     # Get distance from lifter preds to triang preds, and compare to model pred
                     rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
@@ -100,7 +108,7 @@ class uncert_net_wrapper():
                 best_val_loss = mean_val_loss
                 torch.save(self.net.state_dict(), self.config.uncertnet_ckpt_path)
             # Logging
-            self.logger.log({"t_loss": mean_train_loss, "v_loss": mean_val_loss})
+            if self.config.log: self.logger.log({"t_loss": mean_train_loss, "v_loss": mean_val_loss})
             if (epoch % self.config.e_print_freq == 0) or (epoch == self.config.epochs - 1):
                 print(f"--> Ep{epoch} avg train_loss: {mean_train_loss:.5f}, avg val_loss: {mean_val_loss:.5f}") #, \
                     #   mean tri_gt_mpjpe_err: {epoch_tri_gt_mpjpe_err:.6f}")
@@ -125,7 +133,11 @@ class uncert_net_wrapper():
                 # print("cam_ids: {}, pred_poses: {}, pred_rots: {}, tr_poses: {}, gt_poses: {}".format(cam_ids.shape, pred_poses.shape, 
                 #                                                                                                        pred_rots.shape, tr_poses.shape, gt_poses.shape))
                 # Combine the data into one tensor and get model pred
-                x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
+                # x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
+                if self.config.use_camID:
+                    x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
+                else:
+                    x = pred_poses.view(-1, self.config.num_kpts*3)
                 pred = self.net(x)
                 pred = pred.view(-1, self.config.num_cams)
 
@@ -162,7 +174,7 @@ class uncert_net_wrapper():
             reweighted_err = torch.cat(reweighted_errs).mean()  * 1000
             triangulated_err = torch.cat(triangulated_errs).mean() * 1000
             print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err))
-            self.logger.log({"Vanilla_err": vanilla_err, "Reweighted_err": reweighted_err, "Triangulated_err": triangulated_err})
+            if self.config.log: self.logger.log({"Vanilla_err": vanilla_err, "Reweighted_err": reweighted_err, "Triangulated_err": triangulated_err})
 
     def mpjpe(self, predicted, target):
         """

@@ -27,22 +27,47 @@ def init_logging(args, config):
         project="Bootstrapping 3D pose estimation with multi view data",
         # track hyperparameters and run metadata
         config={
-        # Architecture
-        "use_confs": config.use_confs,
-        "out_per_kpt": config.out_per_kpt,
-        # Training
-        "lr": config.lr,
-        "epochs": config.epochs,
-        # Eval
-        "num_cams": config.num_cams,
-        }
-    )
+            # Architecture
+            "use_confs": config.use_confs,
+            "use_camID": config.use_camID,
+            "out_per_kpt": config.out_per_kpt,
+            # Training
+            "lr": config.lr,
+            "epochs": config.epochs,
+            # Eval
+            "num_cams": config.num_cams,
+            }
+        )
     return wandb
 
 def get_config(args):
     config = SimpleNamespace()
-    # Debug
-    config.overfit_datalim = None #2_000_000
+    # Logging
+    config.log = True
+    config.b_print_freq = 100
+    config.e_print_freq = 1
+    config.uncertnet_ckpt_path = "auto_UPDRS/model_checkpoints/uncertnet/uncert_net_bestval.pth"
+    config.uncertnet_save_ckpts = True
+    # Model format
+    config.use_camID = True
+    config.use_confs = False
+    config.out_per_kpt = False
+    if config.out_per_kpt:
+        config.out_dim = config.num_kpts
+    else:
+        config.out_dim = 1
+    # Data format
+    config.err_scale = 1000   # Scale the err by this much to make it easier to train
+    config.num_kpts = 15
+    # Training
+    config.val_split = 0.1
+    config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
+    config.epochs = 3
+    config.batch_size = 4096
+    config.lr = 5e-4
+    # Evaluation
+    config.num_cams = 4
+    config.eval_batch_size = 4096
     # Paths
     config.uncertnet_data_path = "auto_UPDRS/data/body/h36m/uncertnet/"
     config.uncertnet_file_pref = "h36m_"
@@ -51,39 +76,16 @@ def get_config(args):
     config.pred_camrots_file = '_pred_rots.npy'
     config.triang_poses_3d_file = '_triang_poses.npy'
     config.gt_poses_3d_file = '_gt_poses.npy'
-    # Data format
-    config.err_scale = 1000   # Scale the err by this much to make it easier to train
-    config.num_kpts = 15
-    # Model format
-    config.use_confs = False
-    config.out_per_kpt = False
-    if config.out_per_kpt:
-        config.out_dim = config.num_kpts
-    else:
-        config.out_dim = 1
-    # Training
-    config.val_split = 0.1
-    config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
-    config.epochs = 3
-    config.batch_size = 4096
-    config.lr = 5e-4
-    # Logging
-    config.b_print_freq = 100
-    config.e_print_freq = 1
-    config.uncertnet_ckpt_path = "auto_UPDRS/model_checkpoints/uncertnet/uncert_net_bestval.pth"
-    config.uncertnet_save_ckpts = True
-    # Eval
-    config.num_cams = 4
-    config.eval_batch_size = 4096
     # Misc
     config.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    config.overfit_datalim = None #2_000_000
     return config
 
 
 def main():
     args = get_args()
     config = get_config(args)
-    logger = init_logging(args, config)
+    logger = init_logging(args, config) if config.log else None
 
     # Do some stuff
     model = uncertnet.uncert_net_wrapper(config, logger)
