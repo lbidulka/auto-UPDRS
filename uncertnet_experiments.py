@@ -35,7 +35,7 @@ def init_logging(args, config):
             "lr": config.lr,
             "epochs": config.epochs,
             # Eval
-            "num_cams": config.num_cams,
+            "cams": config.cams,
             }
         )
     return wandb
@@ -44,6 +44,7 @@ def get_config(args):
     config = SimpleNamespace()
     # Logging
     config.log = True
+    # More Logging
     config.b_print_freq = 100
     config.e_print_freq = 1
     config.uncertnet_ckpt_path = "auto_UPDRS/model_checkpoints/uncertnet/uncert_net_bestval.pth"
@@ -57,6 +58,8 @@ def get_config(args):
     else:
         config.out_dim = 1
     # Data format
+    config.cams = [0, 1, 2, 3]  # All Cam IDs: [0, 1, 2, 3]
+    config.num_cams = len(config.cams)
     config.err_scale = 1000   # Scale the err by this much to make it easier to train
     config.num_kpts = 15
     # Training
@@ -66,7 +69,6 @@ def get_config(args):
     config.batch_size = 4096
     config.lr = 5e-4
     # Evaluation
-    config.num_cams = 4
     config.eval_batch_size = 4096
     # Paths
     config.uncertnet_data_path = "auto_UPDRS/data/body/h36m/uncertnet/"

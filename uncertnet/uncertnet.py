@@ -62,10 +62,7 @@ class uncert_net_wrapper():
             for batch_idx, data in enumerate(self.dataset.train_loader):
                 (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 # Combine the data into one tensor and get model pred
-                if self.config.use_camID:
-                    x = torch.cat((cam_ids, pred_poses,), dim=1)
-                else:
-                    x = pred_poses
+                x = self.format_input(data)
                 pred = self.net(x)
                 # Get distance from lifter preds to triang preds, and compare to model pred
                 rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
@@ -87,10 +84,7 @@ class uncert_net_wrapper():
                 for batch_idx, data in enumerate(self.dataset.val_loader):
                     (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
                     # Combine the data into one tensor and get model pred
-                    if self.config.use_camID:
-                        x = torch.cat((cam_ids, pred_poses,), dim=1)
-                    else:
-                        x = pred_poses
+                    x = self.format_input(data)
                     pred = self.net(x)
                     # Get distance from lifter preds to triang preds, and compare to model pred
                     rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
@@ -132,16 +126,13 @@ class uncert_net_wrapper():
                 (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 # print("cam_ids: {}, pred_poses: {}, pred_rots: {}, tr_poses: {}, gt_poses: {}".format(cam_ids.shape, pred_poses.shape, 
                 #                                                                                                        pred_rots.shape, tr_poses.shape, gt_poses.shape))
-                # Combine the data into one tensor and get model pred
-                # x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
-                if self.config.use_camID:
-                    x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
-                else:
-                    x = pred_poses.view(-1, self.config.num_kpts*3)
+                
+                # Get model pred
+                x = self.format_input(data)
                 pred = self.net(x)
                 pred = pred.view(-1, self.config.num_cams)
 
-                # Get vanilla preds, rotated to each cam coords
+                # Get vanilla method preds, rotated to each cam coords
                 pred_rots = pred_rots.view(-1, pred_rots.shape[2], pred_rots.shape[3])
                 rot_lifter_poses = pred_rots.matmul(pred_poses.view(-1, 3, self.config.num_kpts))
 
@@ -153,17 +144,15 @@ class uncert_net_wrapper():
                 reweighted_poses = pred_rots.matmul(reweighted_poses.view(-1, 3, self.config.num_kpts))
 
                 # Get errs between vanilla, reweighted, and triangulated poses and gt poses
-                # gt_poses = torch.transpose(gt_poses, -1, -2).view(-1, 3, self.config.num_kpts)  # swap xyz/kpts dims and flatten cams
-                # tr_poses = torch.transpose(tr_poses, -1, -2).view(-1, 3, self.config.num_kpts)  # swap xyz/kpts dims and flatten cams
                 gt_poses = gt_poses.view(-1, self.config.num_kpts, 3)  
                 tr_poses = tr_poses.view(-1, self.config.num_kpts, 3)  
                 reweighted_poses = torch.transpose(reweighted_poses, 2, 1)
                 rot_lifter_poses = torch.transpose(rot_lifter_poses, 2, 1)
                 # print("reweighted_poses: {}, rot_lifter_poses: {}, tr_poses: {}, gt_poses: {}".format(reweighted_poses.shape, rot_lifter_poses.shape, 
                 #                                                                                       tr_poses.shape, gt_poses.shape))
-                reweighted_mean_err = self.n_mpjpe(reweighted_poses, gt_poses).unsqueeze(0) #/ cam_ids.shape[0]
-                vanilla_mean_err = self.n_mpjpe(rot_lifter_poses, gt_poses).unsqueeze(0) #/ cam_ids.shape[0]
-                triangulated_mean_err = self.n_mpjpe(tr_poses, gt_poses).unsqueeze(0) #/ cam_ids.shape[0]
+                reweighted_mean_err = self.n_mpjpe(reweighted_poses, gt_poses).unsqueeze(0) 
+                vanilla_mean_err = self.n_mpjpe(rot_lifter_poses, gt_poses).unsqueeze(0)
+                triangulated_mean_err = self.n_mpjpe(tr_poses, gt_poses).unsqueeze(0)
 
                 vanilla_errs.append(vanilla_mean_err)
                 reweighted_errs.append(reweighted_mean_err)
@@ -175,6 +164,19 @@ class uncert_net_wrapper():
             triangulated_err = torch.cat(triangulated_errs).mean() * 1000
             print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err))
             if self.config.log: self.logger.log({"Vanilla_err": vanilla_err, "Reweighted_err": reweighted_err, "Triangulated_err": triangulated_err})
+
+    def format_input(self, data):
+        '''
+        Create correct input data for the model, depending on the config
+        '''
+        (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
+
+        if self.config.use_camID:
+            x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
+        else:
+            x = pred_poses.view(-1, self.config.num_kpts*3)
+
+        return x
 
     def mpjpe(self, predicted, target):
         """

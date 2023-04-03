@@ -16,7 +16,6 @@ class H36MDataset(Dataset):
     def __len__(self):
         return self.poses_2d[0].shape[0]
 
-    # TODO: ADD FETCHING OF GT 3D POSES
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
@@ -50,9 +49,8 @@ class H36M():
         print("Loading data...", end=" ")
         data_cam_ids, data_pred_poses, data_pred_rots, data_tr_poses, data_gt_poses = self.load_data(config, split='train')
         test_data_cam_ids, test_data_pred_poses, test_data_pred_rots, test_data_tr_poses, test_data_gt_poses = self.load_data(config, split='test')
+        print("Using cams: {}".format(config.cams))
         print("loaded: {} train samples, {} test samples".format(len(data_cam_ids), len(test_data_cam_ids)), "\n")
-        # train_split, val_split, test_split = self.get_splits(config, data_cam_ids, data_pred_poses, data_pred_rots, 
-        #                                                      data_tr_poses, data_gt_poses)
         splits = self.get_splits(config, data_cam_ids, data_pred_poses, data_pred_rots, 
                                                              data_tr_poses, data_gt_poses)
 
@@ -96,6 +94,7 @@ class H36M():
         # print(test_cam_ids[:3])
         return (test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses)
     
+    
     def load_data(self, config, split):
         '''
         Loads data from numpy files for the correct dataset split and converts to torch tensors
@@ -107,6 +106,15 @@ class H36M():
         out_pred_rots = np.load(file_prefix + config.pred_camrots_file)
         out_tr_poses = np.load(file_prefix + config.triang_poses_3d_file)
         out_gt_poses = np.load(file_prefix + config.gt_poses_3d_file)
+
+        # Only keep data for cams being used
+        cam_mask = np.isin(out_cam_ids, config.cams)
+        out_cam_ids = out_cam_ids[cam_mask]
+        out_pred_poses = out_pred_poses[cam_mask]
+        out_pred_rots = out_pred_rots[cam_mask]
+        out_tr_poses = out_tr_poses[cam_mask]
+        out_gt_poses = out_gt_poses[cam_mask]
+
         # Convert to torch tensors
         out_cam_ids = torch.from_numpy(out_cam_ids).float().to(config.device).unsqueeze(1)
         out_pred_poses = torch.from_numpy(out_pred_poses).float().to(config.device)
@@ -128,7 +136,7 @@ class H36M():
         test_size = int(config.test_split * len(data_cam_ids))
 
         # Make sure we have a multiple of config.num_cams since we want to sample a group of cameras for each test sample
-        assert test_size % config.num_cams == 0, "Test size must be a multiple of num_cams!"
+        assert test_size % len(config.cams) == 0, "Test size must be a multiple of num_cams!"
         
         if config.test_split != 0:
             (val_cam_ids, test_cam_ids, train_cam_ids) = (data_cam_ids[:val_size], data_cam_ids[val_size:val_size + test_size], data_cam_ids[test_size:])
