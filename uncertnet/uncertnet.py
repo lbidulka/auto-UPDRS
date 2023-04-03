@@ -41,8 +41,9 @@ class uncert_net_wrapper():
     '''
     Wrapper around the uncertainty network to handle training, validation, and testing.
     '''
-    def __init__(self, config):
+    def __init__(self, config, logger):
         self.config = config
+        self.logger = logger
         self.net = uncert_net(config).to(config.device)
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=config.lr)
         self.criterion = torch.nn.MSELoss()
@@ -50,11 +51,11 @@ class uncert_net_wrapper():
 
     def train(self):
         if not self.config.uncertnet_save_ckpts: print("NOTE: Not saving checkpoints!\n")
+        best_val_loss = 1e10
         for epoch in range(self.config.epochs):
             print("Ep: {}".format(epoch))
             train_losses = []
             val_losses = []
-            best_val_loss = 1e10
             # Train
             for batch_idx, data in enumerate(self.dataset.train_loader):
                 (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
@@ -94,11 +95,12 @@ class uncert_net_wrapper():
 
             mean_train_loss, mean_val_loss = sum(train_losses)/len(train_losses), sum(val_losses)/len(val_losses)
             # Save model if best val
-            if self.config.uncertnet_save_ckpts and (val_loss < best_val_loss):
-                print("Saving model (val loss: {:.5f})".format(val_loss))
-                best_val_loss = val_loss
+            if self.config.uncertnet_save_ckpts and (mean_val_loss < best_val_loss):
+                print("Saving model (mean_val_loss: {:.5f})".format(val_loss))
+                best_val_loss = mean_val_loss
                 torch.save(self.net.state_dict(), self.config.uncertnet_ckpt_path)
             # Logging
+            self.logger.log({"t_loss": mean_train_loss, "v_loss": mean_val_loss})
             if (epoch % self.config.e_print_freq == 0) or (epoch == self.config.epochs - 1):
                 print(f"--> Ep{epoch} avg train_loss: {mean_train_loss:.5f}, avg val_loss: {mean_val_loss:.5f}") #, \
                     #   mean tri_gt_mpjpe_err: {epoch_tri_gt_mpjpe_err:.6f}")
@@ -155,11 +157,12 @@ class uncert_net_wrapper():
                 reweighted_errs.append(reweighted_mean_err)
                 triangulated_errs.append(triangulated_mean_err)
             
-            # Print
-            vanilla_errs = torch.cat(vanilla_errs) * 1000
-            reweighted_errs = torch.cat(reweighted_errs) * 1000
-            triangulated_errs = torch.cat(triangulated_errs) * 1000
-            print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}".format(vanilla_errs.mean(), reweighted_errs.mean(), triangulated_errs.mean()))
+            # Logging
+            vanilla_err = torch.cat(vanilla_errs).mean() * 1000
+            reweighted_err = torch.cat(reweighted_errs).mean()  * 1000
+            triangulated_err = torch.cat(triangulated_errs).mean() * 1000
+            print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err))
+            self.logger.log({"Vanilla_err": vanilla_err, "Reweighted_err": reweighted_err, "Triangulated_err": triangulated_err})
 
     def mpjpe(self, predicted, target):
         """
