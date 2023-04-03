@@ -36,6 +36,7 @@ def init_logging(args, config):
             "epochs": config.epochs,
             # Eval
             "cams": config.cams,
+            "num_cams": config.num_cams,
             }
         )
     return wandb
@@ -43,14 +44,17 @@ def init_logging(args, config):
 def get_config(args):
     config = SimpleNamespace()
     # Logging
-    config.log = True
-    # More Logging
+    config.log = False
+    # Tasks/Experiments
+    config.num_runs = 1
+    config.train = True
+    # Logging Details
     config.b_print_freq = 100
     config.e_print_freq = 1
     config.uncertnet_ckpt_path = "auto_UPDRS/model_checkpoints/uncertnet/uncert_net_bestval.pth"
     config.uncertnet_save_ckpts = True
     # Model format
-    config.use_camID = True
+    config.use_camID = False
     config.use_confs = False
     config.out_per_kpt = False
     if config.out_per_kpt:
@@ -58,7 +62,12 @@ def get_config(args):
     else:
         config.out_dim = 1
     # Data format
-    config.cams = [0, 1, 2, 3]  # All Cam IDs: [0, 1, 2, 3]
+    config.cams = [
+                    0, 
+                    1,
+                    2,
+                    3
+                ]  # All Cam IDs: [0, 1, 2, 3]
     config.num_cams = len(config.cams)
     config.err_scale = 1000   # Scale the err by this much to make it easier to train
     config.num_kpts = 15
@@ -87,12 +96,15 @@ def get_config(args):
 def main():
     args = get_args()
     config = get_config(args)
-    logger = init_logging(args, config) if config.log else None
 
     # Do some stuff
-    model = uncertnet.uncert_net_wrapper(config, logger)
-    model.train()
-    model.evaluate()
-    
+    for i in range(config.num_runs):
+        print("Run: {} of {}".format(i, config.num_runs-1))
+        logger = init_logging(args, config) if config.log else None
+        model = uncertnet.uncert_net_wrapper(config, logger)
+        if config.train: model.train()
+        model.evaluate()
+        if config.log: logger.finish()
+        
 if __name__ == '__main__':
     main()

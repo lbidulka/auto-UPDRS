@@ -125,6 +125,7 @@ class uncert_net_wrapper():
             for batch_idx, data in enumerate(tqdm(self.dataset.test_loader)):
                 # Here, data is grouped by frame, so we can get all the cam data for a frame at once
                 (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                pred_rots = pred_rots.view(-1, pred_rots.shape[2], pred_rots.shape[3])
                 # print("cam_ids: {}, pred_poses: {}, pred_rots: {}, tr_poses: {}, gt_poses: {}".format(cam_ids.shape, pred_poses.shape, 
                 #                                                                                                        pred_rots.shape, tr_poses.shape, gt_poses.shape))
                 
@@ -133,19 +134,17 @@ class uncert_net_wrapper():
                 pred = self.net(x)
                 pred = pred.view(-1, self.config.num_cams)
 
-                # Get vanilla method preds, rotated to each cam coords
-                pred_rots = pred_rots.view(-1, pred_rots.shape[2], pred_rots.shape[3])
-                rot_lifter_poses = pred_rots.matmul(pred_poses.view(-1, 3, self.config.num_kpts))
-
-                # Convert pred error into weights and use them to combine the pred_poses
-                weights = torch.softmax(-pred, dim=1)
-                reweighted_poses = torch.sum(pred_poses * weights.unsqueeze(-1), dim=1).view(-1, 1, 3, self.config.num_kpts)
-                # Repeat reweighted poses to all cams and rotate each to corresponding cam coords
-                reweighted_poses = reweighted_poses.repeat(1, self.config.num_cams, 1, 1)
+                # Make reweighted predictions, and rotate them to each cam coords
+                weights = self.create_weights(pred)
+                reweighted_poses = self.reweight_poses(pred_poses, weights)
                 reweighted_poses = pred_rots.matmul(reweighted_poses.view(-1, 3, self.config.num_kpts))
 
-                # Naive baseline
+                # Get vanilla method preds, rotated to each cam coords
+                rot_lifter_poses = pred_rots.matmul(pred_poses.view(-1, 3, self.config.num_kpts))
+
+                # Get Naive baseline
                 naive_preds = self.naive_baseline(data)
+                naive_preds = pred_rots.matmul(naive_preds.view(-1, 3, self.config.num_kpts))
 
                 # Get errs btw various preds and gt poses
                 gt_poses = gt_poses.view(-1, self.config.num_kpts, 3)  
@@ -188,6 +187,22 @@ class uncert_net_wrapper():
             x = pred_poses.view(-1, self.config.num_kpts*3)
 
         return x
+    
+    def reweight_poses(self, pred_poses, weights):
+        '''
+        Combine the predicted poses using the weights
+        '''
+        reweighted_poses = torch.sum(pred_poses * weights.unsqueeze(-1), dim=1).view(-1, 1, 3, self.config.num_kpts)
+        # Repeat reweighted poses to all cams and rotate each to corresponding cam coords
+        reweighted_poses = reweighted_poses.repeat(1, self.config.num_cams, 1, 1)
+        return reweighted_poses
+
+    def create_weights(self, pred):
+        '''
+        Create weights from the model output
+        '''
+        weights = torch.softmax(-pred, dim=1)
+        return weights
 
     def naive_baseline(self, data):
         '''
@@ -200,7 +215,6 @@ class uncert_net_wrapper():
         naive_poses = torch.sum(pred_poses * weights.unsqueeze(-1), dim=1).view(-1, 1, 3, self.config.num_kpts)
         # Repeat reweighted poses to all cams and rotate each to corresponding cam coords
         naive_poses = naive_poses.repeat(1, self.config.num_cams, 1, 1)
-        naive_poses = pred_rots.matmul(naive_poses.view(-1, 3, self.config.num_kpts))
         return naive_poses
 
     def mpjpe(self, predicted, target):
