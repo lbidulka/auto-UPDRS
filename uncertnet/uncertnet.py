@@ -121,6 +121,7 @@ class uncert_net_wrapper():
             vanilla_errs = []
             reweighted_errs = []
             triangulated_errs = []
+            naive_errs = []
             for batch_idx, data in enumerate(tqdm(self.dataset.test_loader)):
                 # Here, data is grouped by frame, so we can get all the cam data for a frame at once
                 (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
@@ -143,27 +144,37 @@ class uncert_net_wrapper():
                 reweighted_poses = reweighted_poses.repeat(1, self.config.num_cams, 1, 1)
                 reweighted_poses = pred_rots.matmul(reweighted_poses.view(-1, 3, self.config.num_kpts))
 
-                # Get errs between vanilla, reweighted, and triangulated poses and gt poses
+                # Naive baseline
+                naive_preds = self.naive_baseline(data)
+
+                # Get errs btw various preds and gt poses
                 gt_poses = gt_poses.view(-1, self.config.num_kpts, 3)  
                 tr_poses = tr_poses.view(-1, self.config.num_kpts, 3)  
                 reweighted_poses = torch.transpose(reweighted_poses, 2, 1)
+                naive_poses = torch.transpose(naive_preds, 2, 1)
                 rot_lifter_poses = torch.transpose(rot_lifter_poses, 2, 1)
                 # print("reweighted_poses: {}, rot_lifter_poses: {}, tr_poses: {}, gt_poses: {}".format(reweighted_poses.shape, rot_lifter_poses.shape, 
                 #                                                                                       tr_poses.shape, gt_poses.shape))
                 reweighted_mean_err = self.n_mpjpe(reweighted_poses, gt_poses).unsqueeze(0) 
                 vanilla_mean_err = self.n_mpjpe(rot_lifter_poses, gt_poses).unsqueeze(0)
                 triangulated_mean_err = self.n_mpjpe(tr_poses, gt_poses).unsqueeze(0)
+                naive_mean_err = self.n_mpjpe(naive_poses, gt_poses).unsqueeze(0) 
 
                 vanilla_errs.append(vanilla_mean_err)
                 reweighted_errs.append(reweighted_mean_err)
+                naive_errs.append(naive_mean_err)
                 triangulated_errs.append(triangulated_mean_err)
             
             # Logging
             vanilla_err = torch.cat(vanilla_errs).mean() * 1000
             reweighted_err = torch.cat(reweighted_errs).mean()  * 1000
             triangulated_err = torch.cat(triangulated_errs).mean() * 1000
-            print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err))
-            if self.config.log: self.logger.log({"Vanilla_err": vanilla_err, "Reweighted_err": reweighted_err, "Triangulated_err": triangulated_err})
+            naive_err = torch.cat(naive_errs).mean() * 1000
+            print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}, Naive_err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err, naive_err))
+            if self.config.log: self.logger.log({"Vanilla_err": vanilla_err, 
+                                                 "Reweighted_err": reweighted_err, 
+                                                 "Triangulated_err": triangulated_err,
+                                                 "Naive_err": naive_err})
 
     def format_input(self, data):
         '''
@@ -177,6 +188,20 @@ class uncert_net_wrapper():
             x = pred_poses.view(-1, self.config.num_kpts*3)
 
         return x
+
+    def naive_baseline(self, data):
+        '''
+        Get a naive equal avg of the 3D backbone predicted poses
+        '''
+        (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
+        pred_rots = pred_rots.view(-1, pred_rots.shape[2], pred_rots.shape[3])
+        # Make equal weights and combine
+        weights = torch.ones((cam_ids.shape[0], self.config.num_cams)).to(self.config.device) / self.config.num_cams
+        naive_poses = torch.sum(pred_poses * weights.unsqueeze(-1), dim=1).view(-1, 1, 3, self.config.num_kpts)
+        # Repeat reweighted poses to all cams and rotate each to corresponding cam coords
+        naive_poses = naive_poses.repeat(1, self.config.num_cams, 1, 1)
+        naive_poses = pred_rots.matmul(naive_poses.view(-1, 3, self.config.num_kpts))
+        return naive_poses
 
     def mpjpe(self, predicted, target):
         """
