@@ -274,10 +274,14 @@ class uncert_net_wrapper():
 
         rot_poses = pred_rots.matmul(pred_poses)
         comparison_poses = gt_poses if self.config.use_gt_targets else tr_poses
+
+        err = torch.norm(rot_poses.transpose(2, 1) - comparison_poses, dim=len(comparison_poses.shape) - 1).mean(dim=1, keepdim=True)
         if self.config.out_per_kpt:
-            err = torch.norm(rot_poses.transpose(2, 1) - comparison_poses, dim=len(comparison_poses.shape) - 1)
-        else:
-            err = torch.norm(rot_poses.transpose(2, 1) - comparison_poses, dim=len(comparison_poses.shape) - 1).mean(dim=1, keepdim=True)
+            diff = rot_poses.transpose(2, 1) - comparison_poses
+            err = torch.norm(diff, dim=2)
+        if self.config.out_directional:
+            err = rot_poses.transpose(2, 1) - comparison_poses
+        
         return err * self.config.err_scale
 
     def mpjpe(self, predicted, target):
