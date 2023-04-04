@@ -47,44 +47,44 @@ class H36M():
     '''
     def __init__(self, config):
         print("Loading data...", end=" ")
-        data_cam_ids, data_pred_poses, data_pred_rots, data_tr_poses, data_gt_poses = self.load_data(config, split='train')
-        test_data_cam_ids, test_data_pred_poses, test_data_pred_rots, test_data_tr_poses, test_data_gt_poses = self.load_data(config, split='test')
+        data_cam_ids, data_ap_2d_poses, data_pred_poses, data_pred_rots, data_tr_poses, data_gt_poses = self.load_data(config, split='train')
+        test_data_cam_ids, test_data_ap_2d_poses, test_data_pred_poses, test_data_pred_rots, test_data_tr_poses, test_data_gt_poses = self.load_data(config, split='test')
         print("Using cams: {}".format(config.cams))
         print("loaded: {} train samples, {} test samples".format(len(data_cam_ids), len(test_data_cam_ids)), "\n")
-        splits = self.get_splits(config, data_cam_ids, data_pred_poses, data_pred_rots, 
-                                                             data_tr_poses, data_gt_poses)
+        splits = self.get_splits(config, data_cam_ids, data_ap_2d_poses, data_pred_poses, data_pred_rots, data_tr_poses, data_gt_poses)
 
-        (train_cam_ids, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses) = splits[0]
-        (val_cam_ids, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses) = splits[1]
+        (train_cam_ids, train_ap_2d_poses, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses) = splits[0]
+        (val_cam_ids, val_ap_2d_poses, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses) = splits[1]
 
         if config.test_split != 0:
-            (test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses) = self.reformat_test_data(config, splits[2])
+            (test_cam_ids, test_ap_2d_poses, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses) = self.reformat_test_data(config, splits[2])
         else:
-            (test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses) = self.reformat_test_data(config, 
-                                                                                                                    (test_data_cam_ids, test_data_pred_poses, 
-                                                                                                                     test_data_pred_rots, test_data_tr_poses, 
-                                                                                                                     test_data_gt_poses))
+            (test_cam_ids, test_ap_2d_poses, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses) = self.reformat_test_data(config, 
+                                                                                                                    (test_data_cam_ids, test_data_ap_2d_poses, 
+                                                                                                                     test_data_pred_poses, test_data_pred_rots, 
+                                                                                                                     test_data_tr_poses, test_data_gt_poses))
 
         self.train_loader = torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(train_cam_ids, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses),
+            torch.utils.data.TensorDataset(train_cam_ids, train_ap_2d_poses, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses),
             batch_size=config.batch_size, shuffle=True)   
         self.val_loader = torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(val_cam_ids, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses),
+            torch.utils.data.TensorDataset(val_cam_ids, val_ap_2d_poses, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses),
             batch_size=config.batch_size, shuffle=False) 
         self.test_loader = torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses),
+            torch.utils.data.TensorDataset(test_cam_ids, test_ap_2d_poses, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses),
             batch_size=config.eval_batch_size, shuffle=False)
         
     def reformat_test_data(self, config, test_split):
         '''
         we have to reshape test data to be (num_samples, num_cams, ...)
         '''
-        (test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses) = test_split
+        (test_cam_ids, test_data_ap_2d_poses, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses) = test_split
         # print("OG test_cam_ids: {}, test_pred_poses: {}, test_pred_rots: {}, test_tr_poses: {}, test_gt_poses: {}".format(test_cam_ids.shape, test_pred_poses.shape, 
         #                                                                                                                test_pred_rots.shape, test_tr_poses.shape, test_gt_poses.shape))
         # print(test_cam_ids[:3])
         # TODO: MAKE THIS MORE FLEXIBLE???
         test_cam_ids = test_cam_ids.view(-1, config.num_cams)
+        test_data_ap_2d_poses = test_data_ap_2d_poses.view(-1, config.num_cams, config.num_kpts*3)
         test_pred_poses = test_pred_poses.view(-1, config.num_cams, config.num_kpts*3)
         test_pred_rots = test_pred_rots.view(-1, config.num_cams, 3, 3)
         test_tr_poses = test_tr_poses.view(-1, config.num_cams, config.num_kpts, 3)
@@ -92,7 +92,7 @@ class H36M():
         # print("RE test_cam_ids: {}, test_pred_poses: {}, test_pred_rots: {}, test_tr_poses: {}, test_gt_poses: {}".format(test_cam_ids.shape, test_pred_poses.shape, 
         #                                                                                                                test_pred_rots.shape, test_tr_poses.shape, test_gt_poses.shape))
         # print(test_cam_ids[:3])
-        return (test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses)
+        return (test_cam_ids, test_data_ap_2d_poses, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses)
     
     
     def load_data(self, config, split):
@@ -101,61 +101,68 @@ class H36M():
         '''
         file_prefix = config.uncertnet_data_path + config.uncertnet_file_pref + split
         # Load data from numpy files
-        out_cam_ids = np.load(file_prefix + config.cam_ids_file)
-        out_pred_poses = np.load(file_prefix + config.pred_poses_3d_file)
-        out_pred_rots = np.load(file_prefix + config.pred_camrots_file)
-        out_tr_poses = np.load(file_prefix + config.triang_poses_3d_file)
-        out_gt_poses = np.load(file_prefix + config.gt_poses_3d_file)
+        cam_ids = np.load(file_prefix + config.cam_ids_file)
+        ap_2d_poses = np.load(file_prefix + config.ap_pred_poses_2d_file)
+        pred_poses = np.load(file_prefix + config.pred_poses_3d_file)
+        pred_rots = np.load(file_prefix + config.pred_camrots_file)
+        tr_poses = np.load(file_prefix + config.triang_poses_3d_file)
+        gt_poses = np.load(file_prefix + config.gt_poses_3d_file)
 
         # Only keep data for cams being used
-        cam_mask = np.isin(out_cam_ids, config.cams)
-        out_cam_ids = out_cam_ids[cam_mask]
-        out_pred_poses = out_pred_poses[cam_mask]
-        out_pred_rots = out_pred_rots[cam_mask]
-        out_tr_poses = out_tr_poses[cam_mask]
-        out_gt_poses = out_gt_poses[cam_mask]
+        cam_mask = np.isin(cam_ids, config.cams)
+        cam_ids = cam_ids[cam_mask]
+        ap_2d_poses = ap_2d_poses[cam_mask]
+        pred_poses = pred_poses[cam_mask]
+        pred_rots = pred_rots[cam_mask]
+        tr_poses = tr_poses[cam_mask]
+        gt_poses = gt_poses[cam_mask]
 
         # Convert to torch tensors
-        out_cam_ids = torch.from_numpy(out_cam_ids).float().to(config.device).unsqueeze(1)
-        out_pred_poses = torch.from_numpy(out_pred_poses).float().to(config.device)
-        out_pred_rots = torch.from_numpy(out_pred_rots).float().to(config.device)
-        out_tr_poses = torch.from_numpy(out_tr_poses).float().to(config.device)
-        out_gt_poses = torch.from_numpy(out_gt_poses).float().to(config.device)
+        cam_ids = torch.from_numpy(cam_ids).float().to(config.device).unsqueeze(1)
+        ap_2d_poses = torch.from_numpy(ap_2d_poses).float().to(config.device)
+        pred_poses = torch.from_numpy(pred_poses).float().to(config.device)
+        pred_rots = torch.from_numpy(pred_rots).float().to(config.device)
+        tr_poses = torch.from_numpy(tr_poses).float().to(config.device)
+        gt_poses = torch.from_numpy(gt_poses).float().to(config.device)
+
         # TEST IF CAN OVERFIT
         if config.overfit_datalim is not None:
             print("DEBUG: Limiting dataset to {} samples for overfitting".format(config.overfit_datalim), end=" ")
-            out_cam_ids = out_cam_ids[:config.overfit_datalim]
-            out_pred_poses = out_pred_poses[:config.overfit_datalim]
-            out_pred_rots = out_pred_rots[:config.overfit_datalim]
-            out_tr_poses = out_tr_poses[:config.overfit_datalim]
-            out_gt_poses = out_gt_poses[:config.overfit_datalim]
-        return out_cam_ids, out_pred_poses, out_pred_rots, out_tr_poses, out_gt_poses
+            cam_ids = cam_ids[:config.overfit_datalim]
+            ap_2d_poses = ap_2d_poses[:config.overfit_datalim]
+            pred_poses = pred_poses[:config.overfit_datalim]
+            pred_rots = pred_rots[:config.overfit_datalim]
+            tr_poses = tr_poses[:config.overfit_datalim]
+            gt_poses = gt_poses[:config.overfit_datalim]
+        return cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses
 
-    def get_splits(self, config, data_cam_ids, data_pred_poses, data_pred_rots, data_tr_poses, data_gt_poses):
+    def get_splits(self, config, data_cam_ids, data_ap_2d_poses, data_pred_poses, data_pred_rots, data_tr_poses, data_gt_poses):
         val_size = int(config.val_split * len(data_cam_ids))
         test_size = int(config.test_split * len(data_cam_ids))
 
         # Make sure we have a multiple of config.num_cams since we want to sample a group of cameras for each test sample
         assert test_size % len(config.cams) == 0, "Test size must be a multiple of num_cams!"
-        
+
         if config.test_split != 0:
             (val_cam_ids, test_cam_ids, train_cam_ids) = (data_cam_ids[:val_size], data_cam_ids[val_size:val_size + test_size], data_cam_ids[test_size:])
+            (val_ap_2d_poses, test_ap_2d_poses, train_ap_2d_poses) = (data_ap_2d_poses[:val_size], data_ap_2d_poses[val_size:val_size + test_size], data_ap_2d_poses[test_size:])
             (val_pred_poses, test_pred_poses, train_pred_poses) = (data_pred_poses[:val_size], data_pred_poses[val_size:val_size + test_size], data_pred_poses[test_size:])
             (val_pred_rots, test_pred_rots, train_pred_rots) = (data_pred_rots[:val_size], data_pred_rots[val_size:val_size + test_size], data_pred_rots[test_size:])
             (val_tr_poses, test_tr_poses, train_tr_poses) = (data_tr_poses[:val_size], data_tr_poses[val_size:val_size + test_size], data_tr_poses[test_size:])
             (val_gt_poses, test_gt_poses, train_gt_poses) = (data_gt_poses[:val_size], data_gt_poses[val_size:val_size + test_size], data_gt_poses[test_size:])
 
-            trains = [train_cam_ids, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses]
-            vals = [val_cam_ids, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses]
-            tests = [test_cam_ids, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses]
+            trains = [train_cam_ids, train_ap_2d_poses, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses]
+            vals = [val_cam_ids, val_ap_2d_poses, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses]
+            tests = [test_cam_ids, test_ap_2d_poses, test_pred_poses, test_pred_rots, test_tr_poses, test_gt_poses]
             return trains, vals, tests
         else:
             (val_cam_ids, train_cam_ids) = (data_cam_ids[:val_size], data_cam_ids[val_size:])
+            (val_ap_2d_poses, train_ap_2d_poses) = (data_ap_2d_poses[:val_size], data_ap_2d_poses[val_size:])
             (val_pred_poses, train_pred_poses) = (data_pred_poses[:val_size], data_pred_poses[val_size:])
             (val_pred_rots, train_pred_rots) = (data_pred_rots[:val_size], data_pred_rots[val_size:])
             (val_tr_poses, train_tr_poses) = (data_tr_poses[:val_size], data_tr_poses[val_size:])
             (val_gt_poses, train_gt_poses) = (data_gt_poses[:val_size], data_gt_poses[val_size:])
 
-            trains = [train_cam_ids, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses]
-            vals = [val_cam_ids, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses]
+            trains = [train_cam_ids, train_ap_2d_poses, train_pred_poses, train_pred_rots, train_tr_poses, train_gt_poses]
+            vals = [val_cam_ids, val_ap_2d_poses, val_pred_poses, val_pred_rots, val_tr_poses, val_gt_poses]
             return trains, vals

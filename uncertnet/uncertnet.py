@@ -60,21 +60,15 @@ class uncert_net_wrapper():
             val_losses = []
             # Train
             for batch_idx, data in enumerate(self.dataset.train_loader):
-                (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
-                # Combine the data into one tensor and get model pred
+                (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 x = self.format_input(data)
                 pred = self.net(x)
-                # Get distance from lifter preds to triang preds, and compare to model pred
-                rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
-                if self.config.out_per_kpt:
-                    raise NotImplementedError
-                else:
-                    triang_mpjpe_err = torch.norm(rot_poses.transpose(2, 1) - tr_poses, dim=len(tr_poses.shape) - 1).mean(dim=1, keepdim=True)
-                train_loss = self.criterion(pred, triang_mpjpe_err)
+                lifter_err = self.mpjpe_mm(data)
+                train_loss = self.criterion(pred, lifter_err)
                 # Backprop
-                self.optimizer.zero_grad()
                 train_loss.backward()
                 self.optimizer.step()
+                self.optimizer.zero_grad()
                 # Logging
                 train_losses.append(train_loss.item())
                 if (batch_idx % self.config.b_print_freq == 0):
@@ -82,23 +76,18 @@ class uncert_net_wrapper():
             # Val
             with torch.no_grad():
                 for batch_idx, data in enumerate(self.dataset.val_loader):
-                    (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
-                    # Combine the data into one tensor and get model pred
+                    (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
                     x = self.format_input(data)
                     pred = self.net(x)
-                    # Get distance from lifter preds to triang preds, and compare to model pred
-                    rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
-                    if self.config.out_per_kpt:
-                        raise NotImplementedError
-                    else:
-                        triang_mpjpe_err = torch.norm(rot_poses.transpose(2, 1) - tr_poses, dim=len(tr_poses.shape) - 1).mean(dim=1, keepdim=True)
-                    val_loss = self.criterion(pred, triang_mpjpe_err)
+                    lifter_err = self.mpjpe_mm(data)
+                    val_loss = self.criterion(pred, lifter_err) 
+                    # Logging
                     val_losses.append(val_loss)
 
             mean_train_loss, mean_val_loss = sum(train_losses)/len(train_losses), sum(val_losses)/len(val_losses)
             # Save model if best val
             if self.config.uncertnet_save_ckpts and (mean_val_loss < best_val_loss):
-                print("Saving model (mean_val_loss: {:.5f})".format(val_loss))
+                print("Saving model (mean_val_loss): {:.5f})".format(mean_val_loss))
                 best_val_loss = mean_val_loss
                 torch.save(self.net.state_dict(), self.config.uncertnet_ckpt_path)
             # Logging
@@ -106,6 +95,18 @@ class uncert_net_wrapper():
             if (epoch % self.config.e_print_freq == 0) or (epoch == self.config.epochs - 1):
                 print(f"--> Ep{epoch} avg train_loss: {mean_train_loss:.5f}, avg val_loss: {mean_val_loss:.5f}") #, \
                     #   mean tri_gt_mpjpe_err: {epoch_tri_gt_mpjpe_err:.6f}")
+    
+    def mpjpe_mm(self, data):
+        '''
+        Reshape inputs and compute the per-sample mean per joint position error in mm.
+        '''
+        (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+        rot_poses = pred_rots.matmul(pred_poses.reshape(-1, 3, self.config.num_kpts))
+        if self.config.out_per_kpt:
+            raise NotImplementedError
+        else:
+            err = torch.norm(rot_poses.transpose(2, 1) - tr_poses, dim=len(tr_poses.shape) - 1).mean(dim=1, keepdim=True)
+        return err * self.config.err_scale
 
     def evaluate(self):
         '''
@@ -124,7 +125,7 @@ class uncert_net_wrapper():
             naive_errs = []
             for batch_idx, data in enumerate(tqdm(self.dataset.test_loader)):
                 # Here, data is grouped by frame, so we can get all the cam data for a frame at once
-                (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 pred_rots = pred_rots.view(-1, pred_rots.shape[2], pred_rots.shape[3])
                 # print("cam_ids: {}, pred_poses: {}, pred_rots: {}, tr_poses: {}, gt_poses: {}".format(cam_ids.shape, pred_poses.shape, 
                 #                                                                                                        pred_rots.shape, tr_poses.shape, gt_poses.shape))
@@ -169,7 +170,7 @@ class uncert_net_wrapper():
             reweighted_err = torch.cat(reweighted_errs).mean()  * 1000
             triangulated_err = torch.cat(triangulated_errs).mean() * 1000
             naive_err = torch.cat(naive_errs).mean() * 1000
-            print("Vanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}, Naive_err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err, naive_err))
+            print("\nVanilla err: {:.3f}, reweighted err: {:.3f}, triangulated err: {:.3f}, Naive_err: {:.3f}".format(vanilla_err, reweighted_err, triangulated_err, naive_err))
             if self.config.log: self.logger.log({"Vanilla_err": vanilla_err, 
                                                  "Reweighted_err": reweighted_err, 
                                                  "Triangulated_err": triangulated_err,
@@ -179,13 +180,24 @@ class uncert_net_wrapper():
         '''
         Create correct input data for the model, depending on the config
         '''
-        (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
+        (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+        if len(ap_2d_poses.shape) == 2:
+            ap_2d_confs = ap_2d_poses[:, -15:]
+        elif len(ap_2d_poses.shape) == 3:
+            ap_2d_confs = ap_2d_poses[:, :, -15:]
+        else:
+            raise ValueError("ap_2d_poses shape is not 2 or 3?")
 
-        if self.config.use_camID:
-            x = torch.cat((cam_ids.view(-1, 1), pred_poses.view(-1, self.config.num_kpts*3),), dim=1)
+        x = pred_poses.view(-1, self.config.num_kpts*3)
+        if self.config.use_confs:
+            x = torch.cat((x, ap_2d_confs.view(-1, self.config.num_kpts)), dim=1)
+        elif self.config.use_camID:
+            x = torch.cat((x, cam_ids.view(-1, 1)), dim=1)
         else:
             x = pred_poses.view(-1, self.config.num_kpts*3)
 
+        # We want input data scale to be mm, not m
+        x = x * self.config.err_scale # TODO: MAKE THIS MORE FLEXIBLE, DEPENDANT ON 3D BACKBONE
         return x
     
     def reweight_poses(self, pred_poses, weights):
@@ -201,14 +213,19 @@ class uncert_net_wrapper():
         '''
         Create weights from the model output
         '''
-        weights = torch.softmax(-pred, dim=1)
+        pred_min = torch.min(pred, dim=1, keepdim=True)[0]
+        pred_max = torch.max(pred, dim=1, keepdim=True)[0]
+        pred_adj = (pred) / (pred_max)
+        # print("pred: {}, sf: {}, pred_adj: {}, sf_adj: {}".format(pred, torch.softmax(-pred, dim=1), 
+        #                                                           pred_adj, torch.softmax(-pred_adj, dim=1)))
+        weights = torch.softmax(-pred_adj, dim=1)
         return weights
 
     def naive_baseline(self, data):
         '''
         Get a naive equal avg of the 3D backbone predicted poses
         '''
-        (cam_ids, pred_poses, pred_rots, tr_poses, gt_poses) = data
+        (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
         pred_rots = pred_rots.view(-1, pred_rots.shape[2], pred_rots.shape[3])
         # Make equal weights and combine
         weights = torch.ones((cam_ids.shape[0], self.config.num_cams)).to(self.config.device) / self.config.num_cams

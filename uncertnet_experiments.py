@@ -44,10 +44,11 @@ def init_logging(args, config):
 def get_config(args):
     config = SimpleNamespace()
     # Logging
-    config.log = False
+    config.log = True
     # Tasks/Experiments
-    config.num_runs = 1
+    config.num_runs = 10
     config.train = True
+    config.eval = True
     # Logging Details
     config.b_print_freq = 100
     config.e_print_freq = 1
@@ -55,7 +56,7 @@ def get_config(args):
     config.uncertnet_save_ckpts = True
     # Model format
     config.use_camID = False
-    config.use_confs = False
+    config.use_confs = True
     config.out_per_kpt = False
     if config.out_per_kpt:
         config.out_dim = config.num_kpts
@@ -74,15 +75,16 @@ def get_config(args):
     # Training
     config.val_split = 0.1
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
-    config.epochs = 3
+    config.epochs = 5
     config.batch_size = 4096
-    config.lr = 5e-4
+    config.lr = 1e-3
     # Evaluation
     config.eval_batch_size = 4096
     # Paths
     config.uncertnet_data_path = "auto_UPDRS/data/body/h36m/uncertnet/"
     config.uncertnet_file_pref = "h36m_"
     config.cam_ids_file = '_cam_ids.npy'
+    config.ap_pred_poses_2d_file = '_ap_preds.npy'
     config.pred_poses_3d_file = '_pred_poses.npy'
     config.pred_camrots_file = '_pred_rots.npy'
     config.triang_poses_3d_file = '_triang_poses.npy'
@@ -102,8 +104,9 @@ def main():
         print("Run: {} of {}".format(i, config.num_runs-1))
         logger = init_logging(args, config) if config.log else None
         model = uncertnet.uncert_net_wrapper(config, logger)
+        # Do tasks as desired
         if config.train: model.train()
-        model.evaluate()
+        if config.eval: model.evaluate()
         if config.log: logger.finish()
         
 if __name__ == '__main__':
