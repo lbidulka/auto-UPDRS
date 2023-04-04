@@ -47,7 +47,7 @@ def get_config(args):
     config.log = False
     # Tasks/Experiments
     config.num_runs = 1
-    config.train = False
+    config.train = True
     config.eval = True
 
     # Logging Details
@@ -55,18 +55,20 @@ def get_config(args):
     config.e_print_freq = 1
     config.uncertnet_ckpt_path = "auto_UPDRS/model_checkpoints/uncertnet/uncert_net_bestval.pth"
     config.uncertnet_save_ckpts = True
-    
+
     # Model Architecture
-    config.use_camID = True
+    config.use_camID = False
     config.use_confs = True
     config.out_per_kpt = True
-    config.hidden_dim = 512
+    config.hidden_dim = 256
     config.num_kpts = 15
     if config.out_per_kpt:
         config.out_dim = config.num_kpts
     else:
         config.out_dim = 1
+
     # Data format
+    config.use_gt_targets = False
     config.cams = [
                     0, 
                     1,
@@ -76,7 +78,7 @@ def get_config(args):
     config.num_cams = len(config.cams)
     config.err_scale = 1   # Scale the err by this much to make it easier to train?
     # Training
-    config.val_split = 0.1
+    config.val_split = 0.2
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
     config.epochs = 3
     config.batch_size = 4096
