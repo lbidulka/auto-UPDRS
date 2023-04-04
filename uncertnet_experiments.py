@@ -44,20 +44,24 @@ def init_logging(args, config):
 def get_config(args):
     config = SimpleNamespace()
     # Logging
-    config.log = True
+    config.log = False
     # Tasks/Experiments
-    config.num_runs = 10
-    config.train = True
+    config.num_runs = 1
+    config.train = False
     config.eval = True
+
     # Logging Details
     config.b_print_freq = 100
     config.e_print_freq = 1
     config.uncertnet_ckpt_path = "auto_UPDRS/model_checkpoints/uncertnet/uncert_net_bestval.pth"
     config.uncertnet_save_ckpts = True
-    # Model format
-    config.use_camID = False
+    
+    # Model Architecture
+    config.use_camID = True
     config.use_confs = True
-    config.out_per_kpt = False
+    config.out_per_kpt = True
+    config.hidden_dim = 512
+    config.num_kpts = 15
     if config.out_per_kpt:
         config.out_dim = config.num_kpts
     else:
@@ -70,12 +74,11 @@ def get_config(args):
                     3
                 ]  # All Cam IDs: [0, 1, 2, 3]
     config.num_cams = len(config.cams)
-    config.err_scale = 1000   # Scale the err by this much to make it easier to train
-    config.num_kpts = 15
+    config.err_scale = 1   # Scale the err by this much to make it easier to train?
     # Training
     config.val_split = 0.1
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
-    config.epochs = 5
+    config.epochs = 3
     config.batch_size = 4096
     config.lr = 1e-3
     # Evaluation
@@ -101,7 +104,7 @@ def main():
 
     # Do some stuff
     for i in range(config.num_runs):
-        print("Run: {} of {}".format(i, config.num_runs-1))
+        print("Run: {} of {}".format(i+1, config.num_runs))
         logger = init_logging(args, config) if config.log else None
         model = uncertnet.uncert_net_wrapper(config, logger)
         # Do tasks as desired
