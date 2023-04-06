@@ -31,6 +31,7 @@ def init_logging(args, config):
             "use_confs": config.use_confs,
             "use_camID": config.use_camID,
             "out_per_kpt": config.out_per_kpt,
+            "out_directional": config.out_directional,
             # Training
             "lr": config.lr,
             "epochs": config.epochs,
@@ -43,8 +44,9 @@ def init_logging(args, config):
 
 def get_config(args):
     config = SimpleNamespace()
-    # Logging
+    # Logging -----------------------
     config.log = False
+    # -------------------------------
     # Tasks/Experiments
     config.num_runs = 1
     config.train = True
@@ -57,15 +59,19 @@ def get_config(args):
     config.uncertnet_save_ckpts = True
 
     # Model Architecture
-    config.use_camID = False
     config.use_confs = True
-    config.out_per_kpt = True
-    config.hidden_dim = 256
+    config.out_per_kpt = True       # output per-kpt err vector?
+    config.out_directional = True   # output directional err vector?
+    config.use_camID = False
+    config.hidden_dim = 1024
     config.num_kpts = 15
+
     if config.out_per_kpt:
         config.out_dim = config.num_kpts
     else:
         config.out_dim = 1
+    if config.out_directional:
+            config.out_dim *= 3
 
     # Data format
     config.use_gt_targets = False
@@ -76,13 +82,13 @@ def get_config(args):
                     3
                 ]  # All Cam IDs: [0, 1, 2, 3]
     config.num_cams = len(config.cams)
-    config.err_scale = 1   # Scale the err by this much to make it easier to train?
+    config.err_scale = 1000   # Scale the err by this much to make it easier to train?
     # Training
-    config.val_split = 0.2
+    config.val_split = 0.3
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
     config.epochs = 3
     config.batch_size = 4096
-    config.lr = 1e-3
+    config.lr = 5e-3
     # Evaluation
     config.eval_batch_size = 4096
     # Paths
@@ -96,7 +102,7 @@ def get_config(args):
     config.gt_poses_3d_file = '_gt_poses.npy'
     # Misc
     config.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    config.overfit_datalim = None #2_000_000
+    config.overfit_datalim = None
     return config
 
 

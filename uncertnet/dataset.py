@@ -126,8 +126,8 @@ class H36M():
         gt_poses = torch.from_numpy(gt_poses).float().to(config.device)
 
         # TEST IF CAN OVERFIT
-        if config.overfit_datalim is not None:
-            print("DEBUG: Limiting dataset to {} samples for overfitting".format(config.overfit_datalim), end=" ")
+        if (split == 'train') and (config.overfit_datalim is not None):
+            print("DEBUG: Limiting training set to {} samples for overfitting".format(config.overfit_datalim), end=" ")
             cam_ids = cam_ids[:config.overfit_datalim]
             ap_2d_poses = ap_2d_poses[:config.overfit_datalim]
             pred_poses = pred_poses[:config.overfit_datalim]
