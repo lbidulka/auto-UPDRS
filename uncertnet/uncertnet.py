@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
-from uncertnet import dataset
+from uncertnet import dataset, MVP_3D
+import pytorch3d.transforms as transform
 
-# Network
+# Error prediction Network
 class uncert_net(torch.nn.Module):
     '''
     Network to predict the err between the lifter predicted poses and the triangulated pseudo-gt poses.
@@ -23,24 +24,24 @@ class uncert_net(torch.nn.Module):
         if config.use_camID:
             in_dim += 1
 
-        # self.dr1 = nn.Dropout(0.2)
+        self.dr1 = nn.Dropout(0.2)
 
         self.l1 = nn.Linear(in_dim, config.hidden_dim)  
         self.bn1 = nn.BatchNorm1d(config.hidden_dim)
-        self.l2 = nn.Linear(config.hidden_dim, config.hidden_dim)
-        self.bn2 = nn.BatchNorm1d(config.hidden_dim)
-        self.l3 = nn.Linear(config.hidden_dim, config.hidden_dim)
-        self.bn3 = nn.BatchNorm1d(config.hidden_dim)
+        # self.l2 = nn.Linear(config.hidden_dim, config.hidden_dim)
+        # self.bn2 = nn.BatchNorm1d(config.hidden_dim)
+        # self.l3 = nn.Linear(config.hidden_dim, config.hidden_dim)
+        # self.bn3 = nn.BatchNorm1d(config.hidden_dim)
         self.out = nn.Linear(config.hidden_dim, config.out_dim)
 
     def forward(self, x):
         # x: [num_kpts * (x,y,z), cam_id]
-        # x = torch.sigmoid(self.bn1(self.l1(x)))
-        # x = torch.sigmoid(self.bn2(self.l2(x)))
-        # x = torch.sigmoid(self.bn3(self.l3(x)))
-        x = torch.sigmoid(self.bn1(self.l1(x)))
-        x = torch.sigmoid(self.bn2(self.l2(x)))
-        x = torch.sigmoid(self.bn3(self.l3(x)))
+        x =  self.dr1(torch.relu(self.bn1(self.l1(x))))
+        # x =  self.dr1(torch.relu(self.bn2(self.l2(x))))
+        # x =  self.dr1(torch.relu(self.bn3(self.l3(x))))
+        # x = self.dr1(torch.sigmoid(self.bn1(self.l1(x))))
+        # x = self.dr1(torch.sigmoid(self.bn2(self.l2(x))))
+        # x = self.dr1(torch.sigmoid(self.bn3(self.l3(x))))
         return self.out(x)
 
 
@@ -57,28 +58,43 @@ class uncert_net_wrapper():
         self.criterion = torch.nn.MSELoss()
         self.dataset = dataset.H36M(config)
 
+        # Setup pretrained 3D lifter
+        self.backbone_3d = MVP_3D.Lifter().to(config.device)
+        self.backbone_3d.load_state_dict(torch.load(config.lifter_ckpt_path))
+        self.backbone_3d.eval()
+
     def train(self):
         if not self.config.uncertnet_save_ckpts: print("NOTE: Not saving checkpoints!\n")
         if self.config.use_gt_targets: print("NOTE: Using GT 3D poses for target error!\n")
         best_val_loss = 1e10
         for epoch in range(self.config.epochs):
             print("Ep: {}".format(epoch))
-            train_losses = []
-            train_n_mpjpes = []
-            train_p_mpjpes = []
-            val_losses = []
-            val_n_mpjpes = []
-            val_p_mpjpes = []
-            vanilla_val_n_mpjpes = []
-            vanilla_val_p_mpjpes = []
+            train_losses, val_losses = [], []
+            train_n_mpjpes, train_p_mpjpes = [], []
+            val_n_mpjpes, val_p_mpjpes = [], []
+            vanilla_train_n_mpjpes, vanilla_train_p_mpjpes = [], []
+            vanilla_val_n_mpjpes, vanilla_val_p_mpjpes = [], []
             # Train
             for batch_idx, data in enumerate(self.dataset.train_loader):
-                # Model preds and loss
                 (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                # Get 3D lifter preds
+                # TODO: MOVE THIS TO MVP_3D WRAPPER
+                kpts_2d, kpts_confs_2d = ap_2d_poses[:, :-15], ap_2d_poses[:, -15:]
+                lifter_3d_preds, lifter_angle_preds = self.backbone_3d(kpts_2d, kpts_confs_2d)
+                lifter_rot_preds = transform.euler_angles_to_matrix(lifter_angle_preds, convention=['X','Y','Z'])
+
+                data = (cam_ids, ap_2d_poses, lifter_3d_preds, lifter_rot_preds, tr_poses, gt_poses)
+                (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                # Model preds and loss
                 x = self.format_input(data)
                 pred = self.net(x)
                 train_loss = self.loss(data, pred)
                 # P1 and P2 Metrics
+                vanilla_poses = pred_rots.matmul(pred_poses.view(-1, 3, self.config.num_kpts))
+                vanilla_poses = torch.transpose(vanilla_poses, 2, 1)
+                vanilla_train_n_mpjpes.append(self.n_mpjpe(vanilla_poses.detach(), gt_poses).unsqueeze(0))
+                vanilla_train_p_mpjpes.append([self.p_mpjpe(vanilla_poses.detach().cpu().numpy(), gt_poses.cpu().numpy())])
+
                 adjusted_poses = self.get_adjusted_poses(pred, pred_poses, pred_rots, train=True)
                 train_n_mpjpes.append(self.n_mpjpe(adjusted_poses.detach(), gt_poses).unsqueeze(0))
                 train_p_mpjpes.append([self.p_mpjpe(adjusted_poses.detach().cpu().numpy(), gt_poses.cpu().numpy())])
@@ -94,10 +110,17 @@ class uncert_net_wrapper():
             with torch.no_grad():
                 for batch_idx, data in enumerate(self.dataset.val_loader):
                     (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                    # Get 3D lifter preds
+                    kpts_2d, kpts_confs_2d = ap_2d_poses[:, :-15], ap_2d_poses[:, -15:]
+                    lifter_3d_preds, lifter_angle_preds = self.backbone_3d(kpts_2d, kpts_confs_2d)
+                    lifter_rot_preds = transform.euler_angles_to_matrix(lifter_angle_preds, convention=['X','Y','Z'])
+
+                    data = (cam_ids, ap_2d_poses, lifter_3d_preds, lifter_rot_preds, tr_poses, gt_poses)
+                    (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                    # Uncertnet preds and loss
                     x = self.format_input(data)
                     pred = self.net(x)
                     val_losses.append(self.loss(data, pred))
-
                     # P1 & P2 Metrics
                     vanilla_poses = pred_rots.matmul(pred_poses.view(-1, 3, self.config.num_kpts))
                     vanilla_poses = torch.transpose(vanilla_poses, 2, 1)
@@ -111,14 +134,15 @@ class uncert_net_wrapper():
             mean_train_loss, mean_val_loss = sum(train_losses)/len(train_losses), sum(val_losses)/len(val_losses)
             train_n_mpjpe, val_n_mpjpe = torch.cat(train_n_mpjpes).mean() * 1000, torch.cat(val_n_mpjpes).mean() * 1000
             train_p_mpjpe, val_p_mpjpe = np.concatenate(train_p_mpjpes).mean() * 1000, np.concatenate(val_p_mpjpes).mean() * 1000
-            vanilla_val_n_mpjpe, vanilla_val_p_mpjpe = torch.cat(vanilla_val_n_mpjpes).mean() * 1000, np.concatenate(vanilla_val_p_mpjpes).mean() * 1000
+            vanilla_train_n_mpjpe, vanilla_val_n_mpjpe = torch.cat(vanilla_train_n_mpjpes).mean() * 1000, torch.cat(vanilla_val_n_mpjpes).mean() * 1000
+            vanilla_val_p_mpjpe, vanilla_train_p_mpjpe = np.concatenate(vanilla_val_p_mpjpes).mean() * 1000, np.concatenate(vanilla_train_p_mpjpes).mean() * 1000
             
             # Logging
             if self.config.log: self.logger.log({"t_loss": mean_train_loss, "v_loss": mean_val_loss})
             if (epoch % self.config.e_print_freq == 0) or (epoch == self.config.epochs - 1):
                 print(f"| mean train_loss: {mean_train_loss:.5f}, mean val_loss: {mean_val_loss:.5f}")
-                print("|| 1-view n_mpjpe (P1): train: {:.3f}, val: {:.3f} | vanilla val: {:.3f}".format(train_n_mpjpe, val_n_mpjpe, vanilla_val_n_mpjpe))
-                print("|| 1-view p_mpjpe (P2): train: {:.3f}, val: {:.3f} | vanilla val: {:.3f}".format(train_p_mpjpe, val_p_mpjpe, vanilla_val_p_mpjpe))
+                print("|| 1-view n_mpjpe (P1): train: {:.3f}, val: {:.3f} | vanilla train: {:.3f}, val: {:.3f}".format(train_n_mpjpe, val_n_mpjpe, vanilla_train_n_mpjpe, vanilla_val_n_mpjpe))
+                print("|| 1-view p_mpjpe (P2): train: {:.3f}, val: {:.3f} | vanilla train: {:.3f}, val: {:.3f}".format(train_p_mpjpe, val_p_mpjpe, vanilla_train_p_mpjpe, vanilla_val_p_mpjpe))
             # Save model if best val_loss
             if self.config.uncertnet_save_ckpts and (mean_val_loss < best_val_loss):
                 print("Saving model (best val_loss)")
@@ -141,6 +165,13 @@ class uncert_net_wrapper():
             test_losses = []
             for batch_idx, data in enumerate(tqdm(self.dataset.test_loader)):
                 # Here, data is grouped by frame, so we can get all the cam data for a frame at once
+                (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
+                # Get 3D lifter preds
+                kpts_2d, kpts_confs_2d = ap_2d_poses[:, :-15], ap_2d_poses[:, -15:]
+                lifter_3d_preds, lifter_angle_preds = self.backbone_3d(kpts_2d, kpts_confs_2d)
+                lifter_rot_preds = transform.euler_angles_to_matrix(lifter_angle_preds, convention=['X','Y','Z'])
+
+                data = (cam_ids, ap_2d_poses, lifter_3d_preds, lifter_rot_preds, tr_poses, gt_poses)
                 (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 pred_rots = pred_rots.view(-1, pred_rots.shape[-2], pred_rots.shape[-1])
                 # Get uncertnet preds and use them to reweight the 3D estimator predicted poses
@@ -320,7 +351,7 @@ class uncert_net_wrapper():
             raise ValueError("ap_2d_poses shape is not 2 or 3?")
 
         # We want input data scale to be mm, not m
-        x = pred_poses.view(-1, self.config.num_kpts*3) * self.config.err_scale # TODO: MAKE THIS MORE FLEXIBLE, DEPENDANT ON 3D BACKBONE
+        x = pred_poses.view(-1, self.config.num_kpts*3) #* self.config.err_scale # TODO: MAKE THIS MORE FLEXIBLE, DEPENDANT ON 3D BACKBONE
         # Add inputs as per config
         if self.config.use_confs:
             x = torch.cat((x, ap_2d_confs.view(-1, self.config.num_kpts)), dim=1)

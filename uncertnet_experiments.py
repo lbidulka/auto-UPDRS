@@ -35,6 +35,7 @@ def init_logging(args, config):
             # Training
             "lr": config.lr,
             "epochs": config.epochs,
+            "gt_targets": config.use_gt_targets,
             # Eval
             "cams": config.cams,
             "num_cams": config.num_cams,
@@ -59,11 +60,11 @@ def get_config(args):
     config.uncertnet_save_ckpts = True
 
     # Model Architecture
-    config.use_confs = True
+    config.use_confs = False        # use 3D pred confidences?
     config.out_per_kpt = True       # output per-kpt err vector?
     config.out_directional = True   # output directional err vector?
     config.use_camID = False
-    config.hidden_dim = 1024
+    config.hidden_dim = 512
     config.num_kpts = 15
 
     if config.out_per_kpt:
@@ -74,7 +75,7 @@ def get_config(args):
             config.out_dim *= 3
 
     # Data format
-    config.use_gt_targets = False
+    config.use_gt_targets = True
     config.cams = [
                     0, 
                     1,
@@ -84,15 +85,23 @@ def get_config(args):
     config.num_cams = len(config.cams)
     config.err_scale = 1000   # Scale the err by this much to make it easier to train?
     # Training
-    config.val_split = 0.3
+    config.val_split = 0.2
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
     config.epochs = 3
     config.batch_size = 4096
-    config.lr = 5e-3
+    config.lr = 3e-4
     # Evaluation
     config.eval_batch_size = 4096
-    # Paths
+    # Model Paths
     config.uncertnet_data_path = "auto_UPDRS/data/body/h36m/uncertnet/"
+    
+    if config.use_gt_targets:
+        config.lifter_ckpt_path = "auto_UPDRS/model_checkpoints/body_pose/model_lifter_gt2d_gt3d.pt"
+        config.uncertnet_data_path += "gt2d_gt3d/"
+    else:
+        config.lifter_ckpt_path = "auto_UPDRS/model_checkpoints/body_pose/model_lifter_ap2d_ap3d.pt"
+    
+    # Data Paths
     config.uncertnet_file_pref = "h36m_"
     config.cam_ids_file = '_cam_ids.npy'
     config.ap_pred_poses_2d_file = '_ap_preds.npy'
