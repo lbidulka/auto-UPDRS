@@ -1,25 +1,25 @@
-from utils import info, alphapose_filtering
+import torch
+from torch.utils.data import Dataset
 from scipy.signal import savgol_filter
 import numpy as np
 import json
 import os
 
-def get_2D_data(subj, task, data_path='auto_UPDRS/data/body/2d_proposals/mohsen_data_PD.npz', 
-                mohsens_data=False, mohsens_output=False):
+from utils import info, alphapose_filtering
+
+def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, mohsens_output=False):
     '''
-    Fetches the 2D pose data for a given subject
-    TODO: CHANGE TO A CLASS AND DONT DO THE LOADING EVERY TIME WE CALL THIS
-    TODO: IMPLEMENT MULTIPLE SUBJECTS
+    Fetches the 2D pose data for specified subjects
     Args:
         subj (str): subject ID
         task (str): task name (e.g. 'free_form_oval', ...)
         data_path (str): path to the 2d kpts dataset
+        normalize (bool): if True, normalize the data
         mohsens_data (bool): if True, load differently for Mohsens data, else use as is
         mohsens_output (bool): if True, return the data in the same format as mohsens data
     Returns: 
         ch3_data (np.array): 2D pose data for channel 3
         ch4_data (np.array): 2D pose data for channel 4
-        TODO: ADD CONFIDENCE DATA
     '''
     # Load up all subjs
     keypoints_PD = np.load(data_path, allow_pickle=True)
@@ -29,6 +29,7 @@ def get_2D_data(subj, task, data_path='auto_UPDRS/data/body/2d_proposals/mohsen_
 
     for subject in keypoints_PD.keys():
         for action in keypoints_PD[subject]:
+            # keypoints_PD[subject][action]['subject'] = []
             for cam_idx in range(len(keypoints_PD[subject][action]['pos'])):
                 kps = keypoints_PD[subject][action]['pos'][cam_idx]     # (n_frames, n_kpts, xy)
                 conf = keypoints_PD[subject][action]['conf'][cam_idx]
@@ -36,24 +37,31 @@ def get_2D_data(subj, task, data_path='auto_UPDRS/data/body/2d_proposals/mohsen_
                 kps = kps[:,[0,1,2,3,4,5,6,8,9,10,11,12,13,14,15],:]
                 conf = conf[:,[0,1,2,3,4,5,6,8,9,10,11,12,13,14,15],:]
 
-                kps = np.transpose(kps,[0,2,1])
-                kps = kps.reshape(-1, 15*2)  # flat: (1, xxx ... yyy)
+                if normalized:
+                    kps = kps - kps[:,:1,:]  # subtract root joint
+
+                kps = np.transpose(kps, [0,2,1])
+                kps = kps.reshape(-1, 15*2)  # flatten: (1, xxx ... yyy)
+
+                if normalized:
+                    kps /= np.linalg.norm(kps, axis=1, keepdims=True)  # normalize scale
                 
                 keypoints_PD[subject][action]['pos'][cam_idx] = kps
                 keypoints_PD[subject][action]['conf'][cam_idx] = conf
+            keypoints_PD[subject][action]['subject'] = np.ones((kps.shape[0])) * int(subject[1:])
     
     # Get subjs of interest
-    ch3_data = keypoints_PD[subj][task]['pos'][0] 
-    ch3_conf = keypoints_PD[subj][task]['conf'][0] 
-    ch4_data = keypoints_PD[subj][task]['pos'][1]  
-    ch4_conf = keypoints_PD[subj][task]['conf'][1]
+    ch3_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs])
+    ch3_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs])
+    ch4_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs])
+    ch4_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs])
     
-    # TODO: VERIFY MOHSENS OUTPUT WORKS WITH HIS TRAINING CODE
     if mohsens_output:
         # concat the subject data together for each channel
-        out_poses_2d = [np.concatenate(data, axis=0) for data in zip(ch3_data, ch4_data)]
-        out_confidences = [np.concatenate(data, axis=0) for data in zip(ch3_conf, ch4_conf)]
-        return out_poses_2d, out_confidences
+        out_poses_2d = np.array([ch3_data, ch4_data]) 
+        out_confidences = np.array([ch3_conf, ch4_conf])
+        out_subject = np.concatenate([keypoints_PD[subj][task]['subject'] for subj in subjs])
+        return out_poses_2d, out_confidences, out_subject
     else:
         return ch3_data, ch4_data, ch3_conf, ch4_conf 
     
@@ -72,7 +80,7 @@ def get_AP_pred_filter_settings(channel, camera_ver):
         x_max (int):        upper bbox x coord threshold, if any
         bbx_w_min (int):  lower bbox width threshold, if any
     '''
-    x_min, x_max, bbx_w_min, bbx_w_max = None, None, None, None
+    x_min, x_max, bbx_w_min, bbx_w_max, bbx_h_min, bbx_h_max = None, None, None, None, None, None
     
     if channel == '002':
         if (camera_ver == 'new'):
@@ -82,17 +90,17 @@ def get_AP_pred_filter_settings(channel, camera_ver):
         
     elif channel == '003':
         if (camera_ver == 'new'):
-            x_min = 2800
+            x_min = None
         elif (camera_ver == 'old'):
             x_min = 2700
-        bbx_w_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
+        bbx_h_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
 
     elif channel == '004':
         if (camera_ver == 'new'):
-            x_min = 2800
+            x_min = None
         elif (camera_ver == 'old'):
             x_min = 2700
-        bbx_w_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
+        bbx_h_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
 
     elif channel == '006':
         if (camera_ver == 'new'):
@@ -106,7 +114,7 @@ def get_AP_pred_filter_settings(channel, camera_ver):
         else:
             raise NotImplementedError
         
-    return (x_min, x_max, bbx_w_min, bbx_w_max)
+    return (x_min, x_max, bbx_w_min, bbx_w_max, bbx_h_min, bbx_h_max)
 
 def filter_ap_detections(ap_preds, channel, camera):
     '''
@@ -117,7 +125,7 @@ def filter_ap_detections(ap_preds, channel, camera):
         channel: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
         camera: the camera (old or new)
     '''
-    (x_min, x_max, bbx_w_min, bbx_w_max) = get_AP_pred_filter_settings(channel, camera)
+    (x_min, x_max, bbx_w_min, bbx_w_max, bbx_h_min, bbx_h_max) = get_AP_pred_filter_settings(channel, camera)
 
     # regroup detections to be per-frame 
     frame_names = list(set([ap_preds[i]["image_id"] for i in range(len(ap_preds))]))
@@ -148,7 +156,7 @@ def filter_ap_detections(ap_preds, channel, camera):
 
             confident = np.mean(np.asarray(detection['keypoints'])[[idx*3 + 2 for idx in joint_idxs]]) > conf_thresh # pred confidence threshold
             
-            bbx_large = True if (bbx_w_min is None) else (bbx_dx > bbx_w_min)     # bbx width threshold
+            bbx_large = True if (bbx_h_min is None) else (bbx_dy > bbx_h_min)     # bbx width threshold
 
             # subj in correct area in frame?
             bbx_subj_loc = True if (x_min is None) else (bbx_x0 > x_min)
@@ -162,10 +170,10 @@ def filter_ap_detections(ap_preds, channel, camera):
                 xy[joints, 1] = np.asarray(detection['keypoints'])[[idx*3 + 1 for idx in joint_idxs]]    # y
                 xy[joints, 2] = np.asarray(detection['keypoints'])[[idx*3 + 2 for idx in joint_idxs]]    # conf
                 kpt[i] = xy
-                # print("saved at frame {}".format(i))       
-            elif np.sum(kpt[i]) == 0:
-                # print("filtered at frame {}".format(i))
-                kpt[i] = np.zeros((16, 3))
+                # print("saved at frame {}".format(i+1))   
+            else:     
+                # print("  filtered at frame {}".format(i+1))
+                pass
     return kpt
 
 def filter_alphapose_results(data_path, subj, task, channels, kpts_dict=None):
@@ -256,3 +264,31 @@ class body_ts_loader():
     def get_data_norm(self, subject):
         return self.data_normal[self.subjects.index(subject)]
    
+class PD_AP_Dataset(Dataset):
+    '''
+    Dataset for the 2D Alphapose keypoints extracted from the UPDRS videos
+    '''
+
+    def __init__(self, poses_2d, confidences, subject):
+        self.poses_2d = poses_2d
+        self.conf = confidences
+        self.subjects = subject
+
+    def __len__(self):
+        return self.poses_2d[0].shape[0]
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        sample = dict()
+        sample['confidences'] = dict()
+
+        for c_idx in range(len(self.poses_2d)):
+            p2d = torch.Tensor(self.poses_2d[c_idx][idx].astype('float32')).cuda()
+            sample['confidences'][c_idx] = torch.Tensor(self.conf[c_idx][idx].astype('float32')).squeeze().cuda()
+            sample['cam' + str(c_idx)] = p2d
+            
+        sample['subjects'] = self.subjects[idx]
+
+        return sample
