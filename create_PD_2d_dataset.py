@@ -72,7 +72,9 @@ def get_AlphaPoses(config):
                 # Do the thing if alles gut
                 else:
                     if config.limit_num_frames:
-                        num_frames = str(30 * config.lim_secs) if S_id in subjects_new_sys else str(15 * config.lim_secs)
+                        num_frames = (str(30 * config.lim_secs) if S_id in subjects_new_sys else str(15 * config.lim_secs))
+                    else:
+                        num_frames = None
                     with cd(config.AP_dir):
                         # Run AlphaPose on the data
                         ap_cmd = "python3 {} --cfg \"{}\" --checkpoint \"{}\" ".format("scripts/demo_inference.py", 
@@ -80,7 +82,9 @@ def get_AlphaPoses(config):
                                                                               "pretrained_models/halpe26_fast_res50_256x192.pth")
                         ap_cmd += "--sp --debug --gpu 0,1 --detbatch 1 --posebatch 30 --qsize 128 "
                         # ap_cmd += "--debug True --qsize 512 --posebatch 32 "
-                        ap_cmd += "--maxframes {} --video \"{}\" --outdir \"{}\"".format(num_frames, in_path, out_path)
+                        if config.limit_num_frames :
+                            ap_cmd += "--maxframes {} ".format(num_frames)
+                        ap_cmd += "--video \"{}\" --outdir \"{}\"".format(in_path, out_path)
                         print("\nTrying AP cmd: ", ap_cmd, end='\n\n')
                         os.system(ap_cmd)
                         
@@ -114,7 +118,8 @@ def compile_JSON(config):
             elif not os.path.exists(ch2_in_json_pth):
                 print("  ERR Input JSON not found: ", ch2_in_json_pth)
             else:
-                kpts_dict = filter_alphapose_results(in_json_path, S_id, config.updrs_task, kpts_dict)
+                # FOR NOW MUST USE A PAIR OF CHANNELS
+                kpts_dict = filter_alphapose_results(in_json_path, S_id, config.updrs_task, config.chs, kpts_dict)
                 print("  Successfully loaded alphapose data.")
     # Pickle the 2d keypoints dict
     if config.save_JSON:
@@ -134,16 +139,24 @@ def get_config():
     # config.subjs_to_get_preds = subjects_All
     config.subjs_to_get_preds = subjects_new_sys
     # config.subjs_to_get_preds = ["S29"]
-    config.subjs_to_compile = ['S01', 'S28', 'S29', 'S31']
+    # config.subjs_to_compile = ['S01', 'S28', 'S29', 'S31']
+    # config.subjs_to_compile = ['S01']
+    # config.subjs_to_compile = ['S28']
+    # config.subjs_to_compile = ['S29']
+    # config.subjs_to_compile = ['S31']
+    config.subjs_to_compile = subjects_new_sys
     
     # Settings
     config.save_preds = False        # Save the 2d preds?
     config.save_JSON = True         # Save the compiled JSON dataset file?
+
     config.limit_num_frames = True  # DEBUG: limit number of frames to process
-    config.lim_secs = 60            # Mohsen used 2 min per video
-    config.updrs_task = "free_form_oval"
-    # config.updrs_task = "tug_stand_walk_sit"
-    config.chs = ["003", "004"]
+    config.lim_secs = 10            # Mohsen used 2 min per video 
+
+    # config.updrs_task = "free_form_oval"
+    config.updrs_task = "tug_stand_walk_sit"
+    # config.chs = ["003", "004"]   # Free Oval
+    config.chs = ["006", "007"]     # TUG
 
     # Paths
     config.root_dir = os.path.dirname(os.path.realpath(__file__))

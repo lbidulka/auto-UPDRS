@@ -21,6 +21,7 @@ def get_2D_data(subj, task, data_path='auto_UPDRS/data/body/2d_proposals/mohsen_
         ch4_data (np.array): 2D pose data for channel 4
         TODO: ADD CONFIDENCE DATA
     '''
+    # Load up all subjs
     keypoints_PD = np.load(data_path, allow_pickle=True)
     if mohsens_data:
         task = 'WalkingOval'
@@ -41,6 +42,7 @@ def get_2D_data(subj, task, data_path='auto_UPDRS/data/body/2d_proposals/mohsen_
                 keypoints_PD[subject][action]['pos'][cam_idx] = kps
                 keypoints_PD[subject][action]['conf'][cam_idx] = conf
     
+    # Get subjs of interest
     ch3_data = keypoints_PD[subj][task]['pos'][0] 
     ch3_conf = keypoints_PD[subj][task]['conf'][0] 
     ch4_data = keypoints_PD[subj][task]['pos'][1]  
@@ -56,25 +58,66 @@ def get_2D_data(subj, task, data_path='auto_UPDRS/data/body/2d_proposals/mohsen_
         return ch3_data, ch4_data, ch3_conf, ch4_conf 
     
 
+def get_AP_pred_filter_settings(channel, camera_ver):
+    '''
+    Selects the appropriate settings for filtering the AP predictions, based on what channel 
+    and camera version we are using
+
+    NOTE: "new" system channels correspond to diff views in the room than "old" system channels
+
+    TODO: MAKE THIS INTO A DICT INSTEAD
+
+    returns:
+        x_min (int):        lower bbox x coord threshold, if any
+        x_max (int):        upper bbox x coord threshold, if any
+        bbx_w_min (int):  lower bbox width threshold, if any
+    '''
+    x_min, x_max, bbx_w_min, bbx_w_max = None, None, None, None
+    
+    if channel == '002':
+        if (camera_ver == 'new'):
+            x_max = 1700
+        else:
+            raise NotImplementedError
+        
+    elif channel == '003':
+        if (camera_ver == 'new'):
+            x_min = 2800
+        elif (camera_ver == 'old'):
+            x_min = 2700
+        bbx_w_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
+
+    elif channel == '004':
+        if (camera_ver == 'new'):
+            x_min = 2800
+        elif (camera_ver == 'old'):
+            x_min = 2700
+        bbx_w_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
+
+    elif channel == '006':
+        if (camera_ver == 'new'):
+            x_max = 2920
+        else:
+            raise NotImplementedError
+
+    elif channel == '007':
+        if (camera_ver == 'new'):
+            x_min = 960
+        else:
+            raise NotImplementedError
+        
+    return (x_min, x_max, bbx_w_min, bbx_w_max)
+
 def filter_ap_detections(ap_preds, channel, camera):
     '''
     My re-adaptation of Mohsens function to process alphapose pred json files
 
     args:
         data: the alphapose output json file loaded in as a dictionary (ex: data1 = json.load(f))
-        channel: the channel of the camera (1 or 2)
+        channel: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
         camera: the camera (old or new)
     '''
-    if channel == 1 and camera == 'new':
-        x_crop = 2800
-        bbx_w_thresh = 1000 # Threshold for the width of the bounding box, evaluator has ~630
-    elif channel == 1 and camera == 'old':
-        x_crop = 2700  
-    elif channel == 2 and camera == 'new':
-        x_crop = 2000
-        bbx_w_thresh = 1000 # Threshold for the width of the bounding box, evaluator has ~630
-    elif channel == 2 and camera == 'old':
-        x_crop = 1950    
+    (x_min, x_max, bbx_w_min, bbx_w_max) = get_AP_pred_filter_settings(channel, camera)
 
     # regroup detections to be per-frame 
     frame_names = list(set([ap_preds[i]["image_id"] for i in range(len(ap_preds))]))
@@ -93,30 +136,39 @@ def filter_ap_detections(ap_preds, channel, camera):
 
     # choose the detection to keep for each frame, if any
     for i, frame_name in enumerate(frame_names):
+        if i == 900:
+            foo = 0
         for detection in frame_detections[frame_name]:
             joint_idxs = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
             # Filters
             bbx_x0, bbx_y0, bbx_dx, bbx_dy = detection['box']
 
-            # not_at_x_edge = (detection['box'][0] > x_edge_thresh) and (detection['box'][0] < (img_w - x_edge_thresh))
             not_at_x_edge = (bbx_x0 > x_edge_thresh) and ((bbx_x0 + bbx_dx) < (img_w - x_edge_thresh))
-            # not_at_y_edge = (detection['box'][1] > y_edge_thresh) and (detection['box'][1] < (img_h - y_edge_thresh))
             not_at_y_edge = (bbx_y0 > y_edge_thresh) and ((bbx_y0 + bbx_dy) < (img_h - y_edge_thresh))
+
             confident = np.mean(np.asarray(detection['keypoints'])[[idx*3 + 2 for idx in joint_idxs]]) > conf_thresh # pred confidence threshold
-            bbx_large = detection['box'][3] > bbx_w_thresh       # bbx width threshold
+            
+            bbx_large = True if (bbx_w_min is None) else (bbx_dx > bbx_w_min)     # bbx width threshold
+
+            # subj in correct area in frame?
+            bbx_subj_loc = True if (x_min is None) else (bbx_x0 > x_min)
+            bbx_subj_loc = bbx_subj_loc if (x_max is None) else ((bbx_x0 < x_max) and bbx_subj_loc)
+
             # If detection is good, save it
-            if not_at_x_edge and not_at_y_edge and bbx_large and confident: 
+            if not_at_x_edge and not_at_y_edge and bbx_large and confident and bbx_subj_loc: 
                 xy = np.zeros((16, 3)) 
                 joints = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
                 xy[joints, 0] = np.asarray(detection['keypoints'])[[idx*3 for idx in joint_idxs]]        # x
                 xy[joints, 1] = np.asarray(detection['keypoints'])[[idx*3 + 1 for idx in joint_idxs]]    # y
                 xy[joints, 2] = np.asarray(detection['keypoints'])[[idx*3 + 2 for idx in joint_idxs]]    # conf
-                kpt[i] = xy          
-            else:
+                kpt[i] = xy
+                # print("saved at frame {}".format(i))       
+            elif np.sum(kpt[i]) == 0:
+                # print("filtered at frame {}".format(i))
                 kpt[i] = np.zeros((16, 3))
     return kpt
 
-def filter_alphapose_results(data_path, subj, task, kpts_dict=None):
+def filter_alphapose_results(data_path, subj, task, channels, kpts_dict=None):
     '''
     Filters alphapose output jsons to keep the subject detections only
 
@@ -124,6 +176,7 @@ def filter_alphapose_results(data_path, subj, task, kpts_dict=None):
         data_path: path to the alphapose json outputs (eg: dataset_path + "/9731/free_form_oval/")
         subj: subject ID for dict
         task: UPDRS task name
+        channels: what channels to process (eg: [3, 4], [2, 7])
         kpts_dict: dictionary of 2D keypoints data to be updated
     '''
     # Initialize the dictionary components as needed
@@ -135,15 +188,15 @@ def filter_alphapose_results(data_path, subj, task, kpts_dict=None):
         kpts_dict[subj][task] = {'pos': {}, 'conf': {}}
 
     # Load and process data from json file of camera channels
-    ch = '003'
+    ch = channels[0] #'003'
     with open(os.path.join(data_path, 'CH' + ch + '_alphapose-results.json')) as f:
         cam1_ap_results = json.load(f)
-        kpts_1 = filter_ap_detections(cam1_ap_results, 1, alphapose_filtering.cam_ver[subj])
+        kpts_1 = filter_ap_detections(cam1_ap_results, ch, alphapose_filtering.cam_ver[subj])
 
-    ch = '004'
+    ch = channels[1] #'004'
     with open(os.path.join(data_path, 'CH' + ch + '_alphapose-results.json')) as f:
         cam2_ap_results = json.load(f)
-        kpts_2 = filter_ap_detections(cam2_ap_results, 2, alphapose_filtering.cam_ver[subj])
+        kpts_2 = filter_ap_detections(cam2_ap_results, ch, alphapose_filtering.cam_ver[subj])
 
     # Make sure same length, may have an extra frame or two due to original AP video processing
     kpts_1 = kpts_1[:min(kpts_1.shape[0], kpts_2.shape[0])]
@@ -168,4 +221,38 @@ def filter_alphapose_results(data_path, subj, task, kpts_dict=None):
     kpts_dict[subj][task]['conf'][1] = kpts_2[:, :, 2:]
 
     return kpts_dict    
+
+
+class body_ts_loader():
+    '''
+    For loading the extracted 3D body keypoints from the UPDRS dataset
+    '''
+    def __init__(self, ts_path, subjects = info.subjects_All) -> None:
+        self.subjects = subjects
+        self.ts_path = ts_path
+        self.feat_names = info.clinical_gait_feat_names
+
+        self.data_normal = []
+        for idx, subj in enumerate(subjects):
+            data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')     # (num_frames, num_joints, 3)
+            for ii in range(15):
+                for jj in range(3):
+                    data_normal[:,ii,jj] = savgol_filter(data_normal[:,ii,jj], 11, 3)   # Smoothing
+
+            x_vec = data_normal[:,1] - data_normal[:,4]      # R Hip - L Hip
+            y_vec = data_normal[:,7] - data_normal[:,0]      # Neck - Pelvis
+            x_vec /= np.linalg.norm(x_vec, keepdims=True, axis=-1)
+            y_vec /= np.linalg.norm(y_vec, keepdims=True, axis=-1)
+            z_vec = np.cross(x_vec, y_vec)
+
+            rotation_matrix = np.ones((len(x_vec), 3, 3))
+            rotation_matrix[:,:,0] = x_vec
+            rotation_matrix[:,:,1] = y_vec
+            rotation_matrix[:,:,2] = z_vec
+
+            self.data_normal.append(np.matmul(data_normal, rotation_matrix))
+
+    # Get the norm timeseries data for a specific subject
+    def get_data_norm(self, subject):
+        return self.data_normal[self.subjects.index(subject)]
    
