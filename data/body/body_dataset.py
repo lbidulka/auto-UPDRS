@@ -7,7 +7,7 @@ import os
 
 from utils import info, alphapose_filtering, cam_sys_info
 
-def get_2D_data(subjs, task, chs, data_path, normalized=True, mohsens_data=False, mohsens_output=False):
+def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, mohsens_output=False):
     '''
     Fetches the 2D pose data for specified subjects.
 
@@ -16,14 +16,14 @@ def get_2D_data(subjs, task, chs, data_path, normalized=True, mohsens_data=False
     Args:
         subj (str): subject ID
         task (str): task name (e.g. 'free_form_oval', ...)
-        chs (list): list of channels to use (e.g. ['001', '002', '006'])    NOTE: THIS USES NEW SYS NAMING
+            chs (list): list of channels to fill (e.g. ['001', '002',])    NOTE: THIS USES NEW SYS NAMING
         data_path (str): path to the 2d kpts dataset
         normalize (bool): if True, normalize the data
         mohsens_data (bool): if True, load differently for Mohsens data, else use as is
         mohsens_output (bool): if True, return the data in the same format as mohsens data
     Returns: 
-        ch3_data (np.array): 2D pose data for channel 3
-        ch4_data (np.array): 2D pose data for channel 4
+        ch3_data (np.array): 2D pose data for view 0
+        ch4_data (np.array): 2D pose data for view 1
     '''
     # Load up all subjs
     keypoints_PD = np.load(data_path, allow_pickle=True)
@@ -55,29 +55,28 @@ def get_2D_data(subjs, task, chs, data_path, normalized=True, mohsens_data=False
             keypoints_PD[subject][action]['subject'] = np.ones((kps.shape[0])) * int(subject[1:])
     
     # Get subjs of interest
-    ch3_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs])
-    ch3_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs])
-    ch4_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs])
-    ch4_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs])
+    ch0_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs])
+    ch0_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs])
+    ch1_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs])
+    ch1_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs])
     
     if mohsens_output:
         # concat the subject data together for each channel
-        out_poses_2d = np.array([ch3_data, ch4_data]) 
-        out_confidences = np.array([ch3_conf, ch4_conf])
+        out_poses_2d = np.array([ch0_data, ch1_data]) 
+        out_confidences = np.array([ch0_conf, ch1_conf])
         out_subject = np.concatenate([keypoints_PD[subj][task]['subject'] for subj in subjs])
         return out_poses_2d, out_confidences, out_subject
     else:
-        return ch3_data, ch4_data, ch3_conf, ch4_conf 
+        return ch0_data, ch1_data, ch0_conf, ch1_conf 
     
 
-def filter_ap_detections(ap_preds, ch, cam_ver):
+def filter_ap_detections(ap_preds, ch):
     '''
     My re-adaptation of Mohsens function to process alphapose pred json files
 
     args:
         data: the alphapose output json file loaded in as a dictionary (ex: data1 = json.load(f))
         ch: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
-        cam_ver: the camera (old or new)
     '''
     filters = alphapose_filtering.AP_view_filters[ch]
 
@@ -141,7 +140,7 @@ def filter_ap_detections(ap_preds, ch, cam_ver):
                 pass
     return kpt
 
-def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None):
+def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwrite=False):
     '''
     Filters alphapose output jsons to keep the subject detections only.
 
@@ -155,16 +154,12 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None):
         data_path: path to the alphapose json outputs (eg: dataset_path + "/9731/free_form_oval/")
         subj: subject ID for dict
         task: UPDRS task name
-        channels: what channels to process (eg: [3, 4], [2, 7])
+        channels: what channels to process (eg: [3, 4], [2, 7])     NOTE: USES NEW SYSTEM CHANNEL NAMING
         kpts_dict: dictionary of 2D keypoints data to be updated
+        overwrite: whether to overwrite existing data in kpts_dict
     '''
     cam_ver = cam_sys_info.cam_ver[subj]
-    # Convert channels to new system if needed
-    chs_new_sys_names = chs
-    if cam_ver == 'old':
-        chs_new_sys_names = [cam_sys_info.ch_old_to_new[ch] for ch in chs]
-
-    # channel = channel if cam_ver == 'new' else cam_sys_info.ch_old_to_new[channel]
+    print("cam_ver: {}".format(cam_ver))
 
     # Initialize the dictionary components as needed
     if kpts_dict is None:
@@ -173,22 +168,35 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None):
         kpts_dict[subj] = {}
     if task not in kpts_dict[subj]:
         kpts_dict[subj][task] = {'pos': {}, 'conf': {}}
+    
+    # Get kpts from channels
+    kpts = []
+    for ch in chs:
+        # check if channel data already present, else initialize
+        if (ch in kpts_dict[subj][task]['pos']) and (not overwrite):
+            print("WARNING: Channel {} already present in kpts_dict, skipping".format(ch))
+            return kpts_dict
+        # else:
+        #     kpts_dict[subj][task]['pos'][ch] = {}
+        #     kpts_dict[subj][task]['conf'][ch] = {}
+        
+        # Load and process data from json file of camera channel
+        ap_preds_json = '{}CH{}_alphapose-results.json'.format(data_path, ch if (cam_ver == 'new') else cam_sys_info.ch_new_to_old[ch])
+        print("Loading {}".format(ap_preds_json))
+        with open(ap_preds_json) as f:
+            ap_results = json.load(f)
+            kpts.append(filter_ap_detections(ap_results, ch))
+    print("")
 
-    # Load and process data from json file of camera channels
-    with open(os.path.join(data_path, 'CH' + chs[0] + '_alphapose-results.json')) as f:
-        cam1_ap_results = json.load(f)
-        kpts_1 = filter_ap_detections(cam1_ap_results, chs_new_sys_names[0], cam_ver)
-
-    with open(os.path.join(data_path, 'CH' + chs[1] + '_alphapose-results.json')) as f:
-        cam2_ap_results = json.load(f)
-        kpts_2 = filter_ap_detections(cam2_ap_results, chs_new_sys_names[1], cam_ver)
+    kpts_1 = kpts[0]
+    kpts_2 = kpts[1]
 
     # If processing together, trim to same length (may have an extra frame or two due to AP video processing)
     if cam_ver == 'new':
         kpts_1 = kpts_1[:min(kpts_1.shape[0], kpts_2.shape[0])]
         kpts_2 = kpts_2[:min(kpts_1.shape[0], kpts_2.shape[0])]
 
-    print("cam_ver: {} \nkpt1.shape: {} kpt2.shape: {}".format(cam_ver, kpts_1.shape, kpts_2.shape))
+    print("kpt1.shape: {} kpt2.shape: {}".format(kpts_1.shape, kpts_2.shape))
     
 
     # Remove frames with 0 pose on channels
@@ -199,8 +207,6 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None):
     elif cam_ver == 'old':
         pose_exists_1 = (np.sum(kpts_1, axis=(1,2)) != 0)
         pose_exists_2 = (np.sum(kpts_2, axis=(1,2)) != 0)
-    else:
-        raise ValueError("Invalid camera version: {}".format(cam_ver))
     
     kpts_1 = kpts_1[pose_exists_1]
     kpts_2 = kpts_2[pose_exists_2]

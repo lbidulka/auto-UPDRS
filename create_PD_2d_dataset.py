@@ -2,6 +2,7 @@ import os
 import fnmatch
 import pickle
 from types import SimpleNamespace
+import json
 
 from utils.info import subjects_ALL_id_dict, subjects_All_date, subjects_All, subjects_new_sys, new_sys_vid_suffixes
 from utils import cam_sys_info
@@ -29,7 +30,7 @@ def get_AlphaPoses(config):
     print("\nGetting AlphaPose predictions...")
     print("config.subjs_to_get_preds: ", config.subjs_to_get_preds)
     print("config.chs: ", config.chs)
-    if config.overwrite_ap_preds: print("WARNING: Overwriting existing AlphaPose predictions!\n")
+    if config.overwrite_ap_preds: print("\nWARNING: Overwriting existing AlphaPose predictions!")
     for S_id, id in subjects_ALL_id_dict.items():
         if S_id in config.subjs_to_get_preds:
             for ch in config.chs:
@@ -62,10 +63,12 @@ def get_AlphaPoses(config):
                     else:
                         print("ERR not sure what to do here... : ", S_id, id, subjects_All_date[subj_idx])
                     file_subpath += 'CH_' + ch + '/'
-                    for file in os.listdir(config.videos_path + file_subpath):
-                        if fnmatch.fnmatch(file, '*' + config.updrs_task + '*.mp4'):
+                    files = os.listdir(config.videos_path + file_subpath)
+                    for file in files:
+                        if fnmatch.fnmatch(file, '*{}*.mp4'.format(config.updrs_task)):
                             file_subpath += file
-                
+                            break
+
                 # make sure file is .mp4 or .avi
                 if not file_subpath.endswith('.mp4') and not file_subpath.endswith('.avi'):
                     print("ERR file not a .mp4 or .avi: ", file_subpath)
@@ -90,7 +93,7 @@ def get_AlphaPoses(config):
                     with cd(config.AP_dir):
                         ap_preds_outpath = '{}CH{}_alphapose-results.json'.format(out_path, ch)
                         # Check if ap_preds_outpath already exists
-                        if os.path.exists(ap_preds_outpath):
+                        if os.path.exists(ap_preds_outpath) and not config.overwrite_ap_preds:
                             print("AP preds already exist for this video, skipping...")
                         else:
                             # Run AlphaPose on the data
@@ -119,25 +122,22 @@ def compile_JSON(config):
     Builds a combined task dataset (JSON) of 2D pose predictions from per-subject-per-channel alphapose pred JSONs
     '''
     print("\nCompiling predictions into JSON...")
+
     kpts_dict = {}
+    # if config.fill_existing_JSON:
+    #     print("Adding to existing JSON: {}".format(config.JSON_dataset_outpath))
+    #     with open(config.JSON_dataset_outpath, 'r') as f:
+    #         kpts_dict = json.load(f)
+
     for S_id, id in subjects_ALL_id_dict.items():
         if S_id in config.subjs_to_compile:
             print("\n--- {}: ---".format(S_id))
             # Construct paths
             in_json_path = config.dataset_path + str(id) + '/' + config.updrs_task + '/'
 
-            # TODO: MAKE THIS NOT HARDCODED TO FIRST AND SECOND CHANNEL ENTRIES
-            ch1_in_json_pth =  in_json_path + 'CH' + config.chs[0] + "_alphapose-results.json"
-            ch2_in_json_pth =  in_json_path + 'CH' + config.chs[1] + "_alphapose-results.json"
-
-            if not os.path.exists(ch1_in_json_pth):
-                print("  ERR Input JSON not found: ", ch1_in_json_pth)
-            elif not os.path.exists(ch2_in_json_pth):
-                print("  ERR Input JSON not found: ", ch2_in_json_pth)
-            else:
-                # FOR NOW MUST USE A PAIR OF CHANNELS
-                kpts_dict = filter_alphapose_results(in_json_path, S_id, config.updrs_task, config.chs, kpts_dict)
-                print("  Successfully loaded alphapose data.")
+            # FOR NOW MUST USE A PAIR OF CHANNELS
+            kpts_dict = filter_alphapose_results(in_json_path, S_id, config.updrs_task, config.chs, kpts_dict)
+            print("  Successfully loaded alphapose data.")
     # Pickle the 2d keypoints dict
     if config.save_JSON:
         print("\nSaving to ", config.JSON_dataset_outpath)
@@ -150,8 +150,8 @@ def compile_JSON(config):
 def get_config():
     config = SimpleNamespace()
     # Tasks
-    config.get_2d_preds = True  # Proces videos to get 2d preds?
-    config.compile_JSON = False  # Compile 2d preds into JSON dataset file?
+    config.get_2d_preds = False  # Proces videos to get 2d preds?
+    config.compile_JSON = True  # Compile 2d preds into JSON dataset file?
 
     # config.subjs_to_get_preds = subjects_All
     config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
@@ -170,26 +170,30 @@ def get_config():
     # Settings
     config.save_preds = True            # Save the 2d preds?
     config.overwrite_ap_preds = False  # Overwrite existing 2d preds?
-    config.save_JSON = False             # Save the compiled JSON dataset file?
+    config.save_JSON = True             # Save the compiled JSON dataset file?
 
     config.limit_num_frames = True  # DEBUG: limit number of frames to process
-    config.lim_secs = 5            # Mohsen used 2 min per video 
+    config.lim_secs = 10            # Mohsen used 2 min per video 
 
     # config.updrs_task = "free_form_oval"
     # config.chs = ["003", "004"]   # Free Oval
 
     config.updrs_task = "tug_stand_walk_sit"
     config.chs = ["006", "007"]     # TUG
+    # config.chs = ["006"]
     # config.chs = ["007"]     # TUG (same channel on new/old system, and non-training subject only using one channel)
 
     # NOTE: CHANNELS ARE NEW SYS NAMES, AND CONVERTED TO OLD SYS NAMES IN THE SCRIPT
+
+    assert len(config.chs) == 2, "Must use a pair of channels for now..."
 
     # Paths
     config.root_dir = os.path.dirname(os.path.realpath(__file__))
     config.videos_path = "/mnt/CAMERA-data/CAMERA/CAMERA visits/Mobility Visit/Study Subjects/"
     config.dataset_path = "/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/"
     config.AP_dir = config.root_dir + "/AlphaPose"
-    config.JSON_dataset_outpath = config.root_dir + "/data/body/2d_proposals/" + config.updrs_task + "_2D_kpts.pickle"
+    config.JSON_dataset_outpath = "{}/data/body/2d_proposals/{}_CH{}_CH{}_2D_kpts.pickle".format(config.root_dir, config.updrs_task,
+                                                                                                config.chs[0], config.chs[1],)
     return config
 
 def main():
