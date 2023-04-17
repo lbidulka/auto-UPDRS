@@ -5,14 +5,18 @@ import numpy as np
 import json
 import os
 
-from utils import info, alphapose_filtering
+from utils import info, alphapose_filtering, cam_sys_info
 
-def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, mohsens_output=False):
+def get_2D_data(subjs, task, chs, data_path, normalized=True, mohsens_data=False, mohsens_output=False):
     '''
-    Fetches the 2D pose data for specified subjects
+    Fetches the 2D pose data for specified subjects.
+
+    TODO: ADD SUPPORT FOR ARBITRARY CHANNELS
+
     Args:
         subj (str): subject ID
         task (str): task name (e.g. 'free_form_oval', ...)
+        chs (list): list of channels to use (e.g. ['001', '002', '006'])    NOTE: THIS USES NEW SYS NAMING
         data_path (str): path to the 2d kpts dataset
         normalize (bool): if True, normalize the data
         mohsens_data (bool): if True, load differently for Mohsens data, else use as is
@@ -66,66 +70,16 @@ def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, moh
         return ch3_data, ch4_data, ch3_conf, ch4_conf 
     
 
-def get_AP_pred_filter_settings(channel, camera_ver):
-    '''
-    Selects the appropriate settings for filtering the AP predictions, based on what channel 
-    and camera version we are using
-
-    NOTE: "new" system channels correspond to diff views in the room than "old" system channels
-
-    TODO: MAKE THIS INTO A DICT INSTEAD
-
-    returns:
-        x_min (int):        lower bbox x coord threshold, if any
-        x_max (int):        upper bbox x coord threshold, if any
-        bbx_w_min (int):  lower bbox width threshold, if any
-    '''
-    x_min, x_max, bbx_w_min, bbx_w_max, bbx_h_min, bbx_h_max = None, None, None, None, None, None
-    
-    if channel == '002':
-        if (camera_ver == 'new'):
-            x_max = 1700
-        else:
-            raise NotImplementedError
-        
-    elif channel == '003':
-        if (camera_ver == 'new'):
-            x_min = None
-        elif (camera_ver == 'old'):
-            x_min = 2700
-        bbx_h_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
-
-    elif channel == '004':
-        if (camera_ver == 'new'):
-            x_min = None
-        elif (camera_ver == 'old'):
-            x_min = 2700
-        bbx_h_min = 1000 # Threshold for the width of the bounding box, evaluator has ~630
-
-    elif channel == '006':
-        if (camera_ver == 'new'):
-            x_max = 2920
-        else:
-            raise NotImplementedError
-
-    elif channel == '007':
-        if (camera_ver == 'new'):
-            x_min = 960
-        else:
-            raise NotImplementedError
-        
-    return (x_min, x_max, bbx_w_min, bbx_w_max, bbx_h_min, bbx_h_max)
-
-def filter_ap_detections(ap_preds, channel, camera):
+def filter_ap_detections(ap_preds, ch, cam_ver):
     '''
     My re-adaptation of Mohsens function to process alphapose pred json files
 
     args:
         data: the alphapose output json file loaded in as a dictionary (ex: data1 = json.load(f))
-        channel: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
-        camera: the camera (old or new)
+        ch: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
+        cam_ver: the camera (old or new)
     '''
-    (x_min, x_max, bbx_w_min, bbx_w_max, bbx_h_min, bbx_h_max) = get_AP_pred_filter_settings(channel, camera)
+    filters = alphapose_filtering.AP_view_filters[ch]
 
     # regroup detections to be per-frame 
     frame_names = list(set([ap_preds[i]["image_id"] for i in range(len(ap_preds))]))
@@ -156,14 +110,25 @@ def filter_ap_detections(ap_preds, channel, camera):
 
             confident = np.mean(np.asarray(detection['keypoints'])[[idx*3 + 2 for idx in joint_idxs]]) > conf_thresh # pred confidence threshold
             
-            bbx_large = True if (bbx_h_min is None) else (bbx_dy > bbx_h_min)     # bbx width threshold
+            # bbx width threshold
+            if (filters['bbx_h_min'] is None):
+                bbx_large = True
+            else:
+                bbx_large = (bbx_dy > filters['bbx_h_min'])     
 
             # subj in correct area in frame?
-            bbx_subj_loc = True if (x_min is None) else (bbx_x0 > x_min)
-            bbx_subj_loc = bbx_subj_loc if (x_max is None) else ((bbx_x0 < x_max) and bbx_subj_loc)
+            if (filters['x_min'] is None):
+                bbx_subj_loc = True
+            else:
+                bbx_subj_loc = (bbx_x0 > filters['x_min'])
+
+            if (filters['x_max'] is None):
+                bbx_subj_loc = bbx_subj_loc
+            else:
+                bbx_subj_loc = (bbx_x0 < filters['x_max']) and bbx_subj_loc
 
             # If detection is good, save it
-            if not_at_x_edge and not_at_y_edge and bbx_large and confident and bbx_subj_loc: 
+            if (not_at_x_edge and not_at_y_edge and bbx_large and confident and bbx_subj_loc): 
                 xy = np.zeros((16, 3)) 
                 joints = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
                 xy[joints, 0] = np.asarray(detection['keypoints'])[[idx*3 for idx in joint_idxs]]        # x
@@ -176,9 +141,15 @@ def filter_ap_detections(ap_preds, channel, camera):
                 pass
     return kpt
 
-def filter_alphapose_results(data_path, subj, task, channels, kpts_dict=None):
+def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None):
     '''
-    Filters alphapose output jsons to keep the subject detections only
+    Filters alphapose output jsons to keep the subject detections only.
+
+    If new cam system, then the channels are processed together as a pair.
+
+    If old cam system, the channels are processed separately and the poses dont necessarily correspond.
+
+    TODO: MAKE IT WORK FOR ARBITRARY NUMBER OF CHANNEL INPUTS, NOT JUST PAIRS
 
     args:
         data_path: path to the alphapose json outputs (eg: dataset_path + "/9731/free_form_oval/")
@@ -187,6 +158,14 @@ def filter_alphapose_results(data_path, subj, task, channels, kpts_dict=None):
         channels: what channels to process (eg: [3, 4], [2, 7])
         kpts_dict: dictionary of 2D keypoints data to be updated
     '''
+    cam_ver = cam_sys_info.cam_ver[subj]
+    # Convert channels to new system if needed
+    chs_new_sys_names = chs
+    if cam_ver == 'old':
+        chs_new_sys_names = [cam_sys_info.ch_old_to_new[ch] for ch in chs]
+
+    # channel = channel if cam_ver == 'new' else cam_sys_info.ch_old_to_new[channel]
+
     # Initialize the dictionary components as needed
     if kpts_dict is None:
         kpts_dict = {}
@@ -196,32 +175,39 @@ def filter_alphapose_results(data_path, subj, task, channels, kpts_dict=None):
         kpts_dict[subj][task] = {'pos': {}, 'conf': {}}
 
     # Load and process data from json file of camera channels
-    ch = channels[0] #'003'
-    with open(os.path.join(data_path, 'CH' + ch + '_alphapose-results.json')) as f:
+    with open(os.path.join(data_path, 'CH' + chs[0] + '_alphapose-results.json')) as f:
         cam1_ap_results = json.load(f)
-        kpts_1 = filter_ap_detections(cam1_ap_results, ch, alphapose_filtering.cam_ver[subj])
+        kpts_1 = filter_ap_detections(cam1_ap_results, chs_new_sys_names[0], cam_ver)
 
-    ch = channels[1] #'004'
-    with open(os.path.join(data_path, 'CH' + ch + '_alphapose-results.json')) as f:
+    with open(os.path.join(data_path, 'CH' + chs[1] + '_alphapose-results.json')) as f:
         cam2_ap_results = json.load(f)
-        kpts_2 = filter_ap_detections(cam2_ap_results, ch, alphapose_filtering.cam_ver[subj])
+        kpts_2 = filter_ap_detections(cam2_ap_results, chs_new_sys_names[1], cam_ver)
 
-    # Make sure same length, may have an extra frame or two due to original AP video processing
-    kpts_1 = kpts_1[:min(kpts_1.shape[0], kpts_2.shape[0])]
-    kpts_2 = kpts_2[:min(kpts_1.shape[0], kpts_2.shape[0])]
+    # If processing together, trim to same length (may have an extra frame or two due to AP video processing)
+    if cam_ver == 'new':
+        kpts_1 = kpts_1[:min(kpts_1.shape[0], kpts_2.shape[0])]
+        kpts_2 = kpts_2[:min(kpts_1.shape[0], kpts_2.shape[0])]
 
-    print("kpt1.shape: ", kpts_1.shape, " kpt2.shape: ", kpts_2.shape)
+    print("cam_ver: {} \nkpt1.shape: {} kpt2.shape: {}".format(cam_ver, kpts_1.shape, kpts_2.shape))
     
-    # TODO: JUST DUPLICATE CH003 INTO CH004 FOR NON-TRAINING DATA LIKE MOHSEN
 
-    # Remove frames with 0 pose on any channel
-    pose_exists = np.logical_and(np.sum(kpts_1, axis=(1,2)) != 0, np.sum(kpts_2, axis=(1,2)) != 0)
-    kpts_1 = kpts_1[pose_exists]
-    kpts_2 = kpts_2[pose_exists]
-
-    print("EXISTANCE FILTERED  kpt1.shape: ", kpts_1.shape, " kpt2.shape: ", kpts_2.shape)
+    # Remove frames with 0 pose on channels
+    if cam_ver == 'new':
+        pose_exists = np.logical_and(np.sum(kpts_1, axis=(1,2)) != 0, np.sum(kpts_2, axis=(1,2)) != 0)
+        pose_exists_1 = pose_exists
+        pose_exists_2 = pose_exists
+    elif cam_ver == 'old':
+        pose_exists_1 = (np.sum(kpts_1, axis=(1,2)) != 0)
+        pose_exists_2 = (np.sum(kpts_2, axis=(1,2)) != 0)
+    else:
+        raise ValueError("Invalid camera version: {}".format(cam_ver))
     
-    assert kpts_1.shape[0] == kpts_2.shape[0], "kpts_1.shape[0] != kpts_2.shape[0]"
+    kpts_1 = kpts_1[pose_exists_1]
+    kpts_2 = kpts_2[pose_exists_2]
+
+    print("EXISTANCE FILTERED: kpt1.shape: {} kpt2.shape: {}".format(kpts_1.shape, kpts_2.shape))
+    
+    if cam_ver == 'new': assert kpts_1.shape[0] == kpts_2.shape[0], "kpts_1.shape[0] != kpts_2.shape[0]"
 
     kpts_dict[subj][task]['pos'][0] = kpts_1[:, :, :2]
     kpts_dict[subj][task]['pos'][1] = kpts_2[:, :, :2]

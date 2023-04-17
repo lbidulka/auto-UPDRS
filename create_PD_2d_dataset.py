@@ -4,6 +4,7 @@ import pickle
 from types import SimpleNamespace
 
 from utils.info import subjects_ALL_id_dict, subjects_All_date, subjects_All, subjects_new_sys, new_sys_vid_suffixes
+from utils import cam_sys_info
 from data.body.body_dataset import filter_alphapose_results
 
 class cd:
@@ -26,13 +27,21 @@ def get_AlphaPoses(config):
     Gets AlphaPose 2D pose predictions from input CAMERA dataset videos
     '''
     print("\nGetting AlphaPose predictions...")
+    print("config.subjs_to_get_preds: ", config.subjs_to_get_preds)
+    print("config.chs: ", config.chs)
+    if config.overwrite_ap_preds: print("WARNING: Overwriting existing AlphaPose predictions!\n")
     for S_id, id in subjects_ALL_id_dict.items():
         if S_id in config.subjs_to_get_preds:
             for ch in config.chs:
-                print("\n--- {}: CH_{} ---".format(S_id, ch))
+                print("\n------------------- \n--- {}: CH_{} ---".format(S_id, ch))
+                # Convert requested CH (assumed to be new system) to old system CH
+                if S_id not in subjects_new_sys:
+                    ch_n = ch
+                    ch = cam_sys_info.ch_new_to_old[ch_n]
+                    print("changing input CH_{} (new sys) --> CH_{} (old sys)".format(ch_n, ch))
+
                 # Construct paths
                 subj_idx = subjects_All.index(S_id)
-                # New system subjects
                 if S_id in subjects_new_sys:
                     file_subpath = '{}/'.format(subjects_All_date[subj_idx])
                     if S_id == 'S01':
@@ -43,7 +52,7 @@ def get_AlphaPoses(config):
                     elif S_id == 'S31':
                         file_subpath += '2021-8-11/'
                     file_subpath += 'LNR616X_ch{}_main_{}.avi'.format(ch[-1], new_sys_vid_suffixes[S_id][config.updrs_task])
-                # Old system subjects
+
                 if S_id not in subjects_new_sys:
                     file_subpath = subjects_All_date[subj_idx] + '/' + str(id)
                     if os.path.exists(config.videos_path + file_subpath + '/Video Data/'):
@@ -52,11 +61,14 @@ def get_AlphaPoses(config):
                         file_subpath += '/Video_Data/'
                     else:
                         print("ERR not sure what to do here... : ", S_id, id, subjects_All_date[subj_idx])
-                        break
                     file_subpath += 'CH_' + ch + '/'
                     for file in os.listdir(config.videos_path + file_subpath):
                         if fnmatch.fnmatch(file, '*' + config.updrs_task + '*.mp4'):
                             file_subpath += file
+                
+                # make sure file is .mp4 or .avi
+                if not file_subpath.endswith('.mp4') and not file_subpath.endswith('.avi'):
+                    print("ERR file not a .mp4 or .avi: ", file_subpath)
 
                 in_path = config.videos_path + file_subpath
                 out_path = config.dataset_path + str(id) + '/' + config.updrs_task + '/'
@@ -76,26 +88,31 @@ def get_AlphaPoses(config):
                     else:
                         num_frames = None
                     with cd(config.AP_dir):
-                        # Run AlphaPose on the data
-                        ap_cmd = "python3 {} --cfg \"{}\" --checkpoint \"{}\" ".format("scripts/demo_inference.py", 
-                                                                              "configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml", 
-                                                                              "pretrained_models/halpe26_fast_res50_256x192.pth")
-                        ap_cmd += "--sp --debug --gpu 0,1 --detbatch 1 --posebatch 30 --qsize 128 "
-                        # ap_cmd += "--debug True --qsize 512 --posebatch 32 "
-                        if config.limit_num_frames :
-                            ap_cmd += "--maxframes {} ".format(num_frames)
-                        ap_cmd += "--video \"{}\" --outdir \"{}\"".format(in_path, out_path)
-                        print("\nTrying AP cmd: ", ap_cmd, end='\n\n')
-                        os.system(ap_cmd)
-                        
-                        # Reformat the output json file
-                        if config.save_preds:
-                            mv_cmd = "mv {}alphapose-results.json {}CH{}_alphapose-results.json".format(out_path, out_path, ch)
-                            print("\nTrying mv cmd: ", mv_cmd, end='\n\n')
-                            os.system(mv_cmd)
+                        ap_preds_outpath = '{}CH{}_alphapose-results.json'.format(out_path, ch)
+                        # Check if ap_preds_outpath already exists
+                        if os.path.exists(ap_preds_outpath):
+                            print("AP preds already exist for this video, skipping...")
                         else:
-                            print("\nNot saving preds, so not moving the json file.")
-                    print("Done with {}, CH_{}".format(S_id,ch))
+                            # Run AlphaPose on the data
+                            ap_cmd = "python3 {} --cfg \"{}\" --checkpoint \"{}\" ".format("scripts/demo_inference.py", 
+                                                                                "configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml", 
+                                                                                "pretrained_models/halpe26_fast_res50_256x192.pth")
+                            ap_cmd += "--sp --debug --gpu 0,1 --detbatch 1 --posebatch 30 --qsize 128 "
+                            # ap_cmd += "--debug True --qsize 512 --posebatch 32 "
+                            if config.limit_num_frames :
+                                ap_cmd += "--maxframes {} ".format(num_frames)
+                            ap_cmd += "--video \"{}\" --outdir \"{}\"".format(in_path, out_path)
+                            print("\nTrying AP cmd: ", ap_cmd, end='\n\n')
+                            os.system(ap_cmd)
+                            
+                            # Reformat the output json file
+                            if config.save_preds:
+                                mv_cmd = "mv {}alphapose-results.json {}".format(out_path, ap_preds_outpath)
+                                print("\nTrying mv cmd: ", mv_cmd, end='\n\n')
+                                os.system(mv_cmd)
+                            else:
+                                print("\nNot saving preds, so not moving the json file.")
+                    print("Done.")
 
 def compile_JSON(config):
     '''
@@ -133,37 +150,46 @@ def compile_JSON(config):
 def get_config():
     config = SimpleNamespace()
     # Tasks
-    config.get_2d_preds = False  # Proces videos to get 2d preds?
-    config.compile_JSON = True  # Compile 2d preds into JSON dataset file?
+    config.get_2d_preds = True  # Proces videos to get 2d preds?
+    config.compile_JSON = False  # Compile 2d preds into JSON dataset file?
 
     # config.subjs_to_get_preds = subjects_All
-    config.subjs_to_get_preds = subjects_new_sys
+    config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
+    # config.subjs_to_get_preds = subjects_new_sys
     # config.subjs_to_get_preds = ["S29"]
+
     # config.subjs_to_compile = ['S01', 'S28', 'S29', 'S31']
     # config.subjs_to_compile = ['S01']
     # config.subjs_to_compile = ['S28']
     # config.subjs_to_compile = ['S29']
     # config.subjs_to_compile = ['S31']
-    config.subjs_to_compile = subjects_new_sys
+    # config.subjs_to_compile = subjects_new_sys
+    config.subjs_to_compile = [subj for subj in subjects_All if subj not in subjects_new_sys]
+    # config.subjs_to_compile = subjects_All
     
     # Settings
-    config.save_preds = False        # Save the 2d preds?
-    config.save_JSON = True         # Save the compiled JSON dataset file?
+    config.save_preds = True            # Save the 2d preds?
+    config.overwrite_ap_preds = False  # Overwrite existing 2d preds?
+    config.save_JSON = False             # Save the compiled JSON dataset file?
 
     config.limit_num_frames = True  # DEBUG: limit number of frames to process
-    config.lim_secs = 10            # Mohsen used 2 min per video 
+    config.lim_secs = 5            # Mohsen used 2 min per video 
 
     # config.updrs_task = "free_form_oval"
-    config.updrs_task = "tug_stand_walk_sit"
     # config.chs = ["003", "004"]   # Free Oval
+
+    config.updrs_task = "tug_stand_walk_sit"
     config.chs = ["006", "007"]     # TUG
+    # config.chs = ["007"]     # TUG (same channel on new/old system, and non-training subject only using one channel)
+
+    # NOTE: CHANNELS ARE NEW SYS NAMES, AND CONVERTED TO OLD SYS NAMES IN THE SCRIPT
 
     # Paths
     config.root_dir = os.path.dirname(os.path.realpath(__file__))
     config.videos_path = "/mnt/CAMERA-data/CAMERA/CAMERA visits/Mobility Visit/Study Subjects/"
     config.dataset_path = "/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/"
     config.AP_dir = config.root_dir + "/AlphaPose"
-    config.JSON_dataset_outpath = config.root_dir + "/data/body/2d_proposals/" + config.updrs_task + "_2D_kpts-DEBUG.pickle"
+    config.JSON_dataset_outpath = config.root_dir + "/data/body/2d_proposals/" + config.updrs_task + "_2D_kpts.pickle"
     return config
 
 def main():

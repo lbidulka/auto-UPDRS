@@ -1,15 +1,17 @@
 import numpy as np
 
 
-# Camera capture system versions for subjects
-cam_ver = {
-        'S01': 'new', 'S02': 'old', 'S03': 'old', 'S04': 'old', 'S05': 'old',
-        'S06': 'old', 'S07': 'old', 'S08': 'old', 'S09': 'old', 'S10': 'old',
-        'S11': 'old', 'S12': 'old', 'S13': 'old', 'S14': 'old', 'S15': 'old',
-        'S16': 'old', 'S17': 'old', 'S18': 'old', 'S19': 'old', 'S20': 'old',
-        'S21': 'old', 'S22': 'old', 'S23': 'old', 'S24': 'old', 'S25': 'old',
-        'S26': 'old', 'S27': 'old', 'S28': 'old', 'S29': 'new', 'S30': 'old',
-        'S31': 'new', 'S32': 'old', 'S33': 'old', 'S34': 'old', 'S35': 'old',
+# Pixel-space filters for cleaning up the AlphaPose 2D pose predictions. 
+# NOTE: This uses "new" system view numbering!
+AP_view_filters = {
+        '001': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
+        '002': {"x_min": 1700, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
+        '003': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": 1000, "bbx_h_max": None},
+        '004': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": 1000, "bbx_h_max": None},
+        '005': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
+        '006': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": 2920, "bbx_h_min": None, "bbx_h_max": None},
+        '007': {"x_min":  960, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
+        '008': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
 }
 
 # Collection of timestamp (?) filters for AlphaPose outputs of "free_form_oval" task for CH3 (row1) and CH4 (row2)
