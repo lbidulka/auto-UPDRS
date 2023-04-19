@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from tqdm import tqdm
+import utils.info
 
 
 def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3, 
@@ -33,11 +34,11 @@ def plot_3D_skeleton(kpts_3D, ax, colours=['r', 'g', 'b'], linewidth=0.5, dims=3
         plt_scatter: if True, also plot the keypoints on top of the skeleton
     '''
     # Skeleton sequences for 3D plotting
-    LA = [7, 12, 13, 14] # L Arm:  Neck, LShoulder, LElbow, LWrist
-    RA = [7, 9, 10, 11]  # R Arm:  Neck, RShoulder, RElbow, RWrist
-    LL = [0, 4, 5, 6]    # L Leg:  Hip, LHip, LKnee, LAnkle
-    RL = [0, 1, 2, 3]    # R Leg:  Hip, RHip, RKnee, RAnkle
-    T = [8, 7, 0]        # Torso:  Head, Neck, Hip
+    LA = utils.info.PD_3D_lifter_skeleton['LA']
+    RA = utils.info.PD_3D_lifter_skeleton['RA']
+    LL = utils.info.PD_3D_lifter_skeleton['LL']
+    RL = utils.info.PD_3D_lifter_skeleton['RL']
+    T = utils.info.PD_3D_lifter_skeleton['T']
 
     # normal, note that y and z axes are swapped to better compare to 2D plots
     if dims == 3:
@@ -68,13 +69,15 @@ def plot_2D_skeleton(kpts_2D, ax, proj_plot=True, z_off=0, zdir='z', colours=['r
         proj_plot: if True, plot on 3D axis, else plot on 2D axis                 # Not working yet, low priority
         plt_scatter: if True, also plot the keypoints on top of the skeleton
     '''
+    # joint_idxs = [19, 11, 13, 15, 12, 14, 16, 18, 17, 6, 8, 10, 5, 7, 9]
     # Skeleton sequences for 2D plotting
     all_pts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-    LA = [13, 0, 2, 4]  # L Arm:  Neck, LShoulder, LElbow, LWrist
-    RA = [13, 1, 3, 5]  # R Arm:  Neck, RShoulder, RElbow, RWrist
-    LL = [14, 6, 8, 10] # L Leg:  Hip, LHip, LKnee, LAnkle
-    RL = [14, 7, 9, 11] # R Leg:  Hip, RHip, RKnee, RAnkle
-    T = [12, 13, 14]    # Torso:  Head, Neck, Hip
+
+    RA = utils.info.PD_2D_AP_skeleton['RA']
+    LA = utils.info.PD_2D_AP_skeleton['LA']
+    LL = utils.info.PD_2D_AP_skeleton['LL']
+    RL = utils.info.PD_2D_AP_skeleton['RL']
+    T = utils.info.PD_2D_AP_skeleton['T']
 
     xs = kpts_2D[all_pts]
     ys = kpts_2D[[x + len(all_pts) for x in all_pts]]
@@ -138,6 +141,11 @@ def visualize_pose(kpts_3D=None, kpts_2D=None,
         nrows += 1
     if kpts_3D is not None:
         nrows += 1
+        if (nrows == 1):
+            kpts_3D_plot_pos = 1
+        else:
+            kpts_3D_plot_pos = 2
+
 
     fig = plt.figure(layout='constrained', )
     if kpts_2D is not None:
@@ -151,26 +159,28 @@ def visualize_pose(kpts_3D=None, kpts_2D=None,
             ax.set_xlim(0,3840)
             ax.set_ylim(2160,0) 
         else:
-            ax.set_xlim(-2,2)
+            ax.set_xlim(-1,1)
 
     if kpts_3D is not None:
-        ax = fig.add_subplot(nrows, 1, 2, projection='3d')
+        ax = fig.add_subplot(nrows, 1, kpts_3D_plot_pos, projection='3d')
         plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
         title = 'Subject 3D Pose (Cam space)' if reproj else 'Subject 3D Pose (Canonical space)'
         ax.set_title(title)
-        ax.set_xlabel('X')
-        ax.set_ylabel('Z')
+        ax.set_xlabel('Z')
+        ax.set_ylabel('X')
         ax.set_zlabel('Y')
-        ax.invert_zaxis()
-        ax.view_init(elev=20., azim=-110.)
+        # ax.view_init(elev=25., azim=-110.)
+        ax.view_init(elev=20., azim=135) #azim=-210.)
 
         if normed_in:
-            ax.set_xlim(-4, 4)
+            ax.set_xlim(1, -1)
+            ax.set_ylim(-0.25, 0.5)
 
     # Show/Save the figure
     fig.legend()
-    if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path + 'pose.png', dpi=500, bbox_inches='tight')
+    if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path, dpi=500, bbox_inches='tight')
     if show_fig: plt.show()
+    plt.clf()
 
 def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=None):
     '''

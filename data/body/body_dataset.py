@@ -4,6 +4,7 @@ from scipy.signal import savgol_filter
 import numpy as np
 import json
 import os
+import pickle
 
 from utils import info, alphapose_filtering, cam_sys_info
 
@@ -22,8 +23,8 @@ def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, moh
         mohsens_data (bool): if True, load differently for Mohsens data, else use as is
         mohsens_output (bool): if True, return the data in the same format as mohsens data
     Returns: 
-        ch3_data (np.array): 2D pose data for view 0
-        ch4_data (np.array): 2D pose data for view 1
+        ch0_data (np.array): 2D pose data for view 0
+        ch1_data (np.array): 2D pose data for view 1
     '''
     # Load up all subjs
     keypoints_PD = np.load(data_path, allow_pickle=True)
@@ -33,7 +34,7 @@ def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, moh
 
     for subject in keypoints_PD.keys():
         for action in keypoints_PD[subject]:
-            # keypoints_PD[subject][action]['subject'] = []
+            keypoints_PD[subject][action]['subject'] = {}
             for cam_idx in range(len(keypoints_PD[subject][action]['pos'])):
                 kps = keypoints_PD[subject][action]['pos'][cam_idx]     # (n_frames, n_kpts, xy)
                 conf = keypoints_PD[subject][action]['conf'][cam_idx]
@@ -52,19 +53,28 @@ def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, moh
                 
                 keypoints_PD[subject][action]['pos'][cam_idx] = kps
                 keypoints_PD[subject][action]['conf'][cam_idx] = conf
-            keypoints_PD[subject][action]['subject'] = np.ones((kps.shape[0])) * int(subject[1:])
+                keypoints_PD[subject][action]['subject'][cam_idx] = np.ones((kps.shape[0])) * int(subject[1:])
     
     # Get subjs of interest
     ch0_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs])
     ch0_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs])
-    ch1_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs])
-    ch1_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs])
+    ch0_subject = np.concatenate([keypoints_PD[subj][task]['subject'][0] for subj in subjs])
+
+    # Check if old system
+    if cam_sys_info.cam_ver[subjs[0]] == 'old':
+        ch1_data = ch0_data
+        ch1_conf = ch0_conf
+        ch1_subject = ch0_subject
+    else:
+        ch1_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs])
+        ch1_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs])
+        ch1_subject = np.concatenate([keypoints_PD[subj][task]['subject'][1] for subj in subjs])
     
     if mohsens_output:
         # concat the subject data together for each channel
         out_poses_2d = np.array([ch0_data, ch1_data]) 
         out_confidences = np.array([ch0_conf, ch1_conf])
-        out_subject = np.concatenate([keypoints_PD[subj][task]['subject'] for subj in subjs])
+        out_subject = np.array(ch0_subject)
         return out_poses_2d, out_confidences, out_subject
     else:
         return ch0_data, ch1_data, ch0_conf, ch1_conf 
@@ -101,6 +111,8 @@ def filter_ap_detections(ap_preds, ch):
             foo = 0
         for detection in frame_detections[frame_name]:
             joint_idxs = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+            #19*3,11*3,13*3,15*3,12*3,14*3,16*3,18*3,17*3,6*3,8*3,10*3,5*3,7*3,9*3
+            joint_idxs = [19, 11, 13, 15, 12, 14, 16, 18, 17, 6, 8, 10, 5, 7, 9]
             # Filters
             bbx_x0, bbx_y0, bbx_dx, bbx_dy = detection['box']
 
@@ -216,7 +228,7 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
     if cam_ver == 'new': assert kpts_1.shape[0] == kpts_2.shape[0], "kpts_1.shape[0] != kpts_2.shape[0]"
 
     kpts_dict[subj][task]['pos'][0] = kpts_1[:, :, :2]
-    kpts_dict[subj][task]['pos'][1] = kpts_2[:, :, :2]
+    kpts_dict[subj][task]['pos'][1] = kpts_2[:, :, :2] 
     kpts_dict[subj][task]['conf'][0] = kpts_1[:, :, 2:]
     kpts_dict[subj][task]['conf'][1] = kpts_2[:, :, 2:]
 
@@ -226,21 +238,39 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
 class body_ts_loader():
     '''
     For loading the extracted 3D body keypoints from the UPDRS dataset
+
+    args:
+        pickled: if False, loads the individual numpy files (Mohsens style), else loads the pickled dictionary (my style)
     '''
-    def __init__(self, ts_path, subjects = info.subjects_All) -> None:
+    def __init__(self, ts_path, subjects = info.subjects_All, pickled=False, proc_aligned=True) -> None:
         self.subjects = subjects
         self.ts_path = ts_path
         self.feat_names = info.clinical_gait_feat_names
 
+        if pickled:
+            with open(ts_path, 'rb') as f:
+                all_body_3d_preds = pickle.load(f)
+
         self.data_normal = []
         for idx, subj in enumerate(subjects):
-            data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')     # (num_frames, num_joints, 3)
+            # Load as needed
+            if pickled:
+                data_normal = all_body_3d_preds[subj]['aligned_3d_preds'] if proc_aligned else all_body_3d_preds[subj]['raw_3d_preds']
+            else:
+                data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')     # (num_frames, num_joints, 3)
+
             for ii in range(15):
                 for jj in range(3):
                     data_normal[:,ii,jj] = savgol_filter(data_normal[:,ii,jj], 11, 3)   # Smoothing
 
-            x_vec = data_normal[:,1] - data_normal[:,4]      # R Hip - L Hip
-            y_vec = data_normal[:,7] - data_normal[:,0]      # Neck - Pelvis
+            # Find Rot matrix of pose
+            Rhip_idx = info.PD_3D_lifter_skeleton['RL'][1]
+            Lhip_idx = info.PD_3D_lifter_skeleton['LL'][1]
+            Neck_idx = info.PD_3D_lifter_skeleton['T'][1]
+            Hip_idx = info.PD_3D_lifter_skeleton['T'][2]
+
+            x_vec = data_normal[:, Lhip_idx] - data_normal[:, Rhip_idx]      # L Hip - R Hip
+            y_vec = data_normal[:, Neck_idx] - data_normal[:, Hip_idx]      # Neck - Pelvis
             x_vec /= np.linalg.norm(x_vec, keepdims=True, axis=-1)
             y_vec /= np.linalg.norm(y_vec, keepdims=True, axis=-1)
             z_vec = np.cross(x_vec, y_vec)
@@ -250,6 +280,7 @@ class body_ts_loader():
             rotation_matrix[:,:,1] = y_vec
             rotation_matrix[:,:,2] = z_vec
 
+            # Rot the pose back to centre
             self.data_normal.append(np.matmul(data_normal, rotation_matrix))
 
     # Get the norm timeseries data for a specific subject

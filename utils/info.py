@@ -44,32 +44,32 @@ subjects_ALL_id_dict = {
                 'S06': 9746, 'S07': 9270, 'S08': 7399, 'S09': 9283, 'S10': 9107, 
                 'S11': 9455, 'S12': 9713, 'S13': 9317, 'S14': 9210, 'S15': 9403,
                 'S16': 9791, 'S17': 9813, 'S18': 9525, 'S19': 9419, 'S20': 7532, 
-                'S21': 7532, 'S22': 9339, 'S23': 9392, 'S24': 9810, 'S25': 7339, 
+                'S21': 9339, 'S22': 9754, 'S23': 9392, 'S24': 9810, 'S25': 7339, 
                 'S26': 7399, 'S27': 7182, 'S28': 9986, 'S29': 9731, 'S30': 9629, 
                 'S31': 9314, 'S32': 9448, 'S33': 9993, 'S34': 9182, 'S35': 9351,
                 }   
 
 # The big man. We can build him... we have the technology...
-# subjects_big_info_dict = {
-#                 'S01': {'id': 9291, 'date': '20210223', 'path': }, 'S02': {'id': 9739, 'date': '20191114', 'path': }, 
-#                 'S03': {'id': 9285, 'date': '20191120', 'path': }, 'S04': {'id': 9769, 'date': '20191112', 'path': }, 
-#                 'S05': {'id': 9964, 'date': '20191119', 'path': }, 'S06': {'id': 9746, 'date': '20200220', 'path': }, 
-#                 'S07': {'id': 9270, 'date': '20191121', 'path': }, 'S08': {'id': 7399, 'date': '20191126', 'path': }, 
-#                 'S09': {'id': 9283, 'date': '20191128', 'path': }, 'S10': {'id': 9107, 'date': '20191203', 'path': }, 
-#                 'S11': {'id': 9455, 'date': '20191204', 'path': }, 'S12': {'id': 9713, 'date': '20200108', 'path': }, 
-#                 'S13': {'id': 9317, 'date': '20200109', 'path': }, 'S14': {'id': 9210, 'date': '20200121', 'path': }, 
-#                 'S15': {'id': 9403, 'date': '20200122', 'path': }, 'S16': {'id': 9791, 'date': '20200123', 'path': }, 
-#                 'S17': {'id': 9813, 'date': '20200124', 'path': }, 'S18': {'id': 9525, 'date': '20200127', 'path': }, 
-#                 'S19': {'id': 9419, 'date': '20200130', 'path': }, 'S20': {'id': 7532, 'date': '20200205', 'path': }, 
-#                 'S21': {'id': 7532, 'date': '20200206', 'path': }, 'S22': {'id': 9339, 'date': '20200207', 'path': }, 
-#                 'S23': {'id': 9392, 'date': '20200213', 'path': }, 'S24': {'id': 9810, 'date': '20200214', 'path': }, 
-#                 'S25': {'id': 7339, 'date': '20200218', 'path': }, 'S26': {'id': 7399, 'date': '20191126', 'path': }, 
-#                 'S27': {'id': 7182, 'date': '20200221', 'path': }, 'S28': {'id': 9986, 'date': '20210706', 'path': }, 
-#                 'S29': {'id': 9731, 'date': '20210804', 'path': }, 'S30': {'id': 9629, 'date': '20200206', 'path': }, 
-#                 'S31': {'id': 9314, 'date': '20210811', 'path': }, 'S32': {'id': 9448, 'date': '20191210', 'path': }, 
-#                 'S33': {'id': 9993, 'date': '20191212', 'path': }, 'S34': {'id': 9182, 'date': '20191218', 'path': }, 
-#                 'S35': {'id': 9351, 'date': '20200227', 'path': },
-#                 }   
+subjects_big_dict = {
+                'S01': {'id': 9291, 'date': '20210223', 'path': None}, 'S02': {'id': 9739, 'date': '20191114', 'path': None}, 
+                'S03': {'id': 9285, 'date': '20191120', 'path': None}, 'S04': {'id': 9769, 'date': '20191112', 'path': None}, 
+                'S05': {'id': 9964, 'date': '20191119', 'path': None}, 'S06': {'id': 9746, 'date': '20200220', 'path': None}, 
+                'S07': {'id': 9270, 'date': '20191121', 'path': None}, 'S08': {'id': 7399, 'date': '20191126', 'path': None}, 
+                'S09': {'id': 9283, 'date': '20191128', 'path': None}, 'S10': {'id': 9107, 'date': '20191203', 'path': None}, 
+                'S11': {'id': 9455, 'date': '20191204', 'path': None}, 'S12': {'id': 9713, 'date': '20200108', 'path': None}, 
+                'S13': {'id': 9317, 'date': '20200109', 'path': None}, 'S14': {'id': 9210, 'date': '20200121', 'path': None}, 
+                'S15': {'id': 9403, 'date': '20200122', 'path': None}, 'S16': {'id': 9791, 'date': '20200123', 'path': None}, 
+                'S17': {'id': 9813, 'date': '20200124', 'path': None}, 'S18': {'id': 9525, 'date': '20200127', 'path': None}, 
+                'S19': {'id': 9419, 'date': '20200130', 'path': None}, 'S20': {'id': 7532, 'date': '20200205', 'path': None}, 
+                'S21': {'id': 9339, 'date': '20200206', 'path': None}, 'S22': {'id': 9754, 'date': '20200207', 'path': None}, 
+                'S23': {'id': 9392, 'date': '20200213', 'path': None}, 'S24': {'id': 9810, 'date': '20200214', 'path': None}, 
+                'S25': {'id': 7339, 'date': '20200218', 'path': None}, 'S26': {'id': 7399, 'date': '20191126', 'path': None}, 
+                'S27': {'id': 7182, 'date': '20200221', 'path': None}, 'S28': {'id': 9986, 'date': '20210706', 'path': None}, 
+                'S29': {'id': 9731, 'date': '20210804', 'path': None}, 'S30': {'id': 9629, 'date': '20200206', 'path': None}, 
+                'S31': {'id': 9314, 'date': '20210811', 'path': None}, 'S32': {'id': 9448, 'date': '20191210', 'path': None}, 
+                'S33': {'id': 9993, 'date': '20191212', 'path': None}, 'S34': {'id': 9182, 'date': '20191218', 'path': None}, 
+                'S35': {'id': 9351, 'date': '20200227', 'path': None},
+                }   
 
 subjects_ALL_path_dict = {}
 for i, subj in enumerate(subjects_All):
@@ -89,3 +89,20 @@ clinical_gait_feat_acronyms_group = [['RHP', 'LHP', 'ASS'], ['RSL', 'LSL'], ['RF
 
 # Labels for the PD subject UPDRS scores (1 if UPDRS score > 0)
 Y_true = np.asarray([1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1])
+
+
+# Definition of pose kpt skeleton (mainly for plotting)
+PD_2D_AP_skeleton = {
+        'LA': [7, 12, 13, 14],  # L Arm:  Neck, LShoulder, LElbow, LWrist
+        'RA': [7, 9, 10, 11],   # R Arm:  Neck, RShoulder, RElbow, RWrist
+        'LL': [0, 1, 2, 3],     # L Leg:  Hip, LHip, LKnee, LAnkle
+        'RL': [0, 4, 5, 6],     # R Leg:  Hip, RHip, RKnee, RAnkle
+        'T': [8, 7, 0],         # Torso:  Head, Neck, Hip
+}
+PD_3D_lifter_skeleton = {
+        'LA': [7, 12, 13, 14], # L Arm:  Neck, LShoulder, LElbow, LWrist
+        'RA': [7, 9, 10, 11],  # R Arm:  Neck, RShoulder, RElbow, RWrist
+        'LL': [0, 1, 2, 3],    # L Leg:  Hip, LHip, LKnee, LAnkle
+        'RL': [0, 4, 5, 6],    # R Leg:  Hip, RHip, RKnee, RAnkle
+        'T': [8, 7, 0],        # Torso:  Head, Neck, Hip
+}
