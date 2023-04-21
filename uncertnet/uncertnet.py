@@ -14,9 +14,6 @@ class uncert_net(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        # TODO: 2 branches, one for poses, one for kpts and one for cam_id. Make branches embed to same size then combine, put through some end layers and output
-        # TODO: Incorporate confidences
-        # TODO: Think about the relative size of the cam_id (1) and the kpts (15*4)...
 
         in_dim = config.num_kpts*3
         if config.use_confs:
@@ -24,24 +21,18 @@ class uncert_net(torch.nn.Module):
         if config.use_camID:
             in_dim += 1
 
+        self.lin = nn.Linear(in_dim, config.out_dim)
+
         self.dr1 = nn.Dropout(0.2)
 
         self.l1 = nn.Linear(in_dim, config.hidden_dim)  
         self.bn1 = nn.BatchNorm1d(config.hidden_dim)
-        # self.l2 = nn.Linear(config.hidden_dim, config.hidden_dim)
-        # self.bn2 = nn.BatchNorm1d(config.hidden_dim)
-        # self.l3 = nn.Linear(config.hidden_dim, config.hidden_dim)
-        # self.bn3 = nn.BatchNorm1d(config.hidden_dim)
         self.out = nn.Linear(config.hidden_dim, config.out_dim)
 
     def forward(self, x):
-        # x: [num_kpts * (x,y,z), cam_id]
-        x =  self.dr1(torch.relu(self.bn1(self.l1(x))))
-        # x =  self.dr1(torch.relu(self.bn2(self.l2(x))))
-        # x =  self.dr1(torch.relu(self.bn3(self.l3(x))))
-        # x = self.dr1(torch.sigmoid(self.bn1(self.l1(x))))
-        # x = self.dr1(torch.sigmoid(self.bn2(self.l2(x))))
-        # x = self.dr1(torch.sigmoid(self.bn3(self.l3(x))))
+        if self.config.simple_linear:
+            return self.lin(x) 
+        x = self.dr1(torch.nn.functional.leaky_relu(self.bn1(self.l1(x))))
         return self.out(x)
 
 
@@ -55,6 +46,8 @@ class uncert_net_wrapper():
         self.logger = logger
         self.net = uncert_net(config).to(config.device)
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=config.lr)
+        if config.use_step_lr: 
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.config.step_lr_size, gamma=0.25)
         self.criterion = torch.nn.MSELoss()
         self.dataset = dataset.H36M(config)
 
@@ -131,6 +124,8 @@ class uncert_net_wrapper():
                     val_n_mpjpes.append(self.n_mpjpe(adjusted_poses, gt_poses).unsqueeze(0))
                     val_p_mpjpes.append([self.p_mpjpe(adjusted_poses.cpu().numpy(), gt_poses.cpu().numpy())])
 
+            if self.config.use_step_lr: self.scheduler.step()
+
             mean_train_loss, mean_val_loss = sum(train_losses)/len(train_losses), sum(val_losses)/len(val_losses)
             train_n_mpjpe, val_n_mpjpe = torch.cat(train_n_mpjpes).mean() * 1000, torch.cat(val_n_mpjpes).mean() * 1000
             train_p_mpjpe, val_p_mpjpe = np.concatenate(train_p_mpjpes).mean() * 1000, np.concatenate(val_p_mpjpes).mean() * 1000
@@ -160,8 +155,8 @@ class uncert_net_wrapper():
         print("Evaluating model on test data...")
         # Go through test data
         with torch.no_grad():
-            vanilla_n_mpjpes, adjusted_n_mpjpes, triangulated_n_mpjpes, naive_n_mpjpes = [], [], [], []
-            vanilla_p_mpjpes, adjusted_p_mpjpes, triangulated_p_mpjpes, naive_p_mpjpes = [], [], [], []
+            vanilla_n_mpjpes, adjusted_n_mpjpes, adjusted_sv_n_mpjpes, triangulated_n_mpjpes, naive_n_mpjpes = [], [], [], [], []
+            vanilla_p_mpjpes, adjusted_p_mpjpes, adjusted_sv_p_mpjpes, triangulated_p_mpjpes, naive_p_mpjpes = [], [], [], [], []
             test_losses = []
             for batch_idx, data in enumerate(tqdm(self.dataset.test_loader)):
                 # Here, data is grouped by frame, so we can get all the cam data for a frame at once
@@ -174,10 +169,11 @@ class uncert_net_wrapper():
                 data = (cam_ids, ap_2d_poses, lifter_3d_preds, lifter_rot_preds, tr_poses, gt_poses)
                 (cam_ids, ap_2d_poses, pred_poses, pred_rots, tr_poses, gt_poses) = data
                 pred_rots = pred_rots.view(-1, pred_rots.shape[-2], pred_rots.shape[-1])
-                # Get uncertnet preds and use them to reweight the 3D estimator predicted poses
+                # Get uncertnet preds and use them to adjust the 3D estimator predicted poses
                 x = self.format_input(data)
                 pred = self.net(x)
                 adjusted_poses = self.get_adjusted_poses(pred, pred_poses, pred_rots)
+                adjusted_poses_singleview = self.get_adjusted_poses(pred, pred_poses, pred_rots, avg=False)
                 # Loss
                 test_losses.append(self.loss(data, pred, train=False))
                 # vanilla method preds, rotated to each cam coords
@@ -192,17 +188,20 @@ class uncert_net_wrapper():
                                                                  rot_lifter_poses.shape[-1], rot_lifter_poses.shape[-2])
                 rot_lifter_poses = rot_lifter_poses.reshape(-1, rot_lifter_poses.shape[-2], rot_lifter_poses.shape[-1])
                 adjusted_poses = adjusted_poses.reshape(-1, adjusted_poses.shape[-2], adjusted_poses.shape[-1])
+                adjusted_poses_singleview = adjusted_poses_singleview.reshape(-1, adjusted_poses_singleview.shape[-2], adjusted_poses_singleview.shape[-1])
                 naive_poses = naive_poses.reshape(-1, naive_poses.shape[-2], naive_poses.shape[-1])
                 gt_poses = gt_poses.reshape(-1, gt_poses.shape[-2], gt_poses.shape[-1])
                 tr_poses = tr_poses.reshape(-1, tr_poses.shape[-2], tr_poses.shape[-1])
                 # N-MPJPE (P1)
                 vanilla_n_mpjpes.append(self.n_mpjpe(rot_lifter_poses, gt_poses).unsqueeze(0))
                 adjusted_n_mpjpes.append(self.n_mpjpe(adjusted_poses, gt_poses).unsqueeze(0))
+                adjusted_sv_n_mpjpes.append(self.n_mpjpe(adjusted_poses_singleview, gt_poses).unsqueeze(0))
                 naive_n_mpjpes.append(self.n_mpjpe(naive_poses, gt_poses).unsqueeze(0))
                 triangulated_n_mpjpes.append(self.n_mpjpe(tr_poses, gt_poses).unsqueeze(0))
                 # P-MPJPE (P2)
                 vanilla_p_mpjpes.append([self.p_mpjpe(rot_lifter_poses.cpu().numpy(), gt_poses.cpu().numpy())])
                 adjusted_p_mpjpes.append([self.p_mpjpe(adjusted_poses.cpu().numpy(), gt_poses.cpu().numpy())])
+                adjusted_sv_p_mpjpes.append([self.p_mpjpe(adjusted_poses_singleview.cpu().numpy(), gt_poses.cpu().numpy())])
                 naive_p_mpjpes.append([self.p_mpjpe(naive_poses.cpu().numpy(), gt_poses.cpu().numpy())])
                 triangulated_p_mpjpes.append([self.p_mpjpe(tr_poses.cpu().numpy(), gt_poses.cpu().numpy())])
             
@@ -211,22 +210,34 @@ class uncert_net_wrapper():
 
             vanilla_n_mpjpe = torch.cat(vanilla_n_mpjpes).mean() * 1000
             adjusted_n_mpjpe = torch.cat(adjusted_n_mpjpes).mean() * 1000
+            adjusted_sv_n_mpjpe = torch.cat(adjusted_sv_n_mpjpes).mean() * 1000
             triangulated_n_mpjpe = torch.cat(triangulated_n_mpjpes).mean() * 1000
             naive_n_mpjpe = torch.cat(naive_n_mpjpes).mean() * 1000
 
             vanilla_p_mpjpe = np.concatenate(vanilla_p_mpjpes).mean() * 1000
             adjusted_p_mpjpe = np.concatenate(adjusted_p_mpjpes).mean() * 1000
+            adjusted_sv_p_mpjpe = np.concatenate(adjusted_sv_p_mpjpes).mean() * 1000
             triangulated_p_mpjpe = np.concatenate(triangulated_p_mpjpes).mean() * 1000
             naive_p_mpjpe = np.concatenate(naive_p_mpjpes).mean() * 1000
 
             print("\nTest loss: {:.3f}".format(mean_test_loss))
-            print("n_mpjpe (P1): adjusted: {:.3f} | naive: {:.3f}, Vanilla: {:.3f}, triangulated: {:.3f}".format(adjusted_n_mpjpe, naive_n_mpjpe, 
-                                                                                                                                      vanilla_n_mpjpe, triangulated_n_mpjpe))
-            print("p_mpjpe (P2): adjusted: {:.3f} | naive: {:.3f}, Vanilla: {:.3f}, triangulated: {:.3f}".format(adjusted_p_mpjpe, naive_p_mpjpe, 
-                                                                                                                                      vanilla_p_mpjpe, triangulated_p_mpjpe))
-            if self.config.log: self.logger.log({"Vanilla_n_mpjpe": vanilla_n_mpjpe, 
-                                                 "Adjusted_n_mpjpe": adjusted_n_mpjpe, 
-                                                 "Triangulated_n_mpjpe": triangulated_n_mpjpe,
+
+            print("n_mpjpe (P1):")
+            print("SV    | adjusted : {:.3f}, Vanilla: {:.3f}, triangulated: {:.3f}".format(adjusted_sv_n_mpjpe, vanilla_n_mpjpe, triangulated_n_mpjpe))
+            print("avg'd | adjusted : {:.3f}, Vanilla: {:.3f}".format(adjusted_n_mpjpe, naive_n_mpjpe))
+
+            print("\np_mpjpe (P2):")
+            print("SV    | adjusted : {:.3f}, Vanilla: {:.3f}, triangulated: {:.3f}".format(adjusted_sv_p_mpjpe, vanilla_p_mpjpe, triangulated_p_mpjpe))
+            print("avg'd | adjusted : {:.3f}, Vanilla: {:.3f}".format(adjusted_p_mpjpe, naive_p_mpjpe))
+            
+            # print("n_mpjpe (P1): adjusted SV: {:.3f}, adjusted avg'd: {:.3f} | Vanilla avg'd: {:.3f}, Vanilla SV: {:.3f}, triangulated: {:.3f}".format(adjusted_sv_n_mpjpe, adjusted_n_mpjpe, 
+            #                                                                    naive_n_mpjpe, vanilla_n_mpjpe, triangulated_n_mpjpe))
+            # print("p_mpjpe (P2): adjusted SV: {:.3f}, adjusted avg'd: {:.3f} | Vanilla avg'd: {:.3f}, Vanilla SV: {:.3f}, triangulated: {:.3f}".format(adjusted_sv_p_mpjpe, adjusted_p_mpjpe, 
+            #                                                                    naive_p_mpjpe, vanilla_p_mpjpe, triangulated_p_mpjpe))
+            if self.config.log: self.logger.log({"Vanilla_n_mpjpe": vanilla_n_mpjpe, "Vanilla_p_mpjpe": vanilla_p_mpjpe, 
+                                                 "UncertNet_sv_n_mpjpe": adjusted_sv_n_mpjpe, "UncertNet_sv_p_mpjpe": adjusted_sv_p_mpjpe,
+                                                 "Adjusted_n_mpjpe": adjusted_n_mpjpe, "Adjusted_p_mpjpe": adjusted_p_mpjpe, 
+                                                 "Triangulated_n_mpjpe": triangulated_n_mpjpe, "Triangulated_p_mpjpe": triangulated_p_mpjpe,
                                                  "Naive_n_mpjpe": naive_n_mpjpe})
 
     def loss(self, data, pred_err, train=True, compute_criterion=True):
@@ -251,7 +262,7 @@ class uncert_net_wrapper():
             diff = rot_poses.transpose(2, 1) - comparison_poses
             err = torch.norm(diff, dim=2)
         if self.config.out_directional:
-            pred_err = pred_err.view(-1, self.config.num_kpts, 3)
+            pred_err = pred_err.view(-1, self.config.num_kpts, 3)                
             err = rot_poses.transpose(2, 1) - comparison_poses
         err *= self.config.err_scale
 
@@ -259,7 +270,7 @@ class uncert_net_wrapper():
         if compute_criterion: err = self.criterion(pred_err, err)
         return err
     
-    def get_adjusted_poses(self, pred_err, pred_poses, pred_rots, train=False):
+    def get_adjusted_poses(self, pred_err, pred_poses, pred_rots, train=False, avg=True):
         '''
         Adjust the backbone 3D kpt predictions, and rotate them to each cam coords
         '''
@@ -280,10 +291,12 @@ class uncert_net_wrapper():
                 # Rotate all corrected poses to canonical pose
                 corrected_poses = corrected_poses.reshape(-1, corrected_poses.shape[-2], corrected_poses.shape[-1]).transpose(-2, -1)
                 corrected_poses = torch.inverse(pred_rots).matmul(corrected_poses).reshape(-1, self.config.num_cams, 3, self.config.num_kpts)
-                # Avg the corrected poses
-                adjusted_poses = torch.mean(corrected_poses, dim=1).unsqueeze(1)
-                # Repeat for each cam
-                adjusted_poses = adjusted_poses.repeat(1, self.config.num_cams, 1, 1)
+                # Avg the corrected poses and repeat for each cam if desired
+                if avg:
+                    adjusted_poses = torch.mean(corrected_poses, dim=1).unsqueeze(1)
+                    adjusted_poses = adjusted_poses.repeat(1, self.config.num_cams, 1, 1)
+                else:
+                    adjusted_poses = corrected_poses
                 # Rotate back to cam coords
                 adjusted_poses = pred_rots.matmul(adjusted_poses.reshape(-1, adjusted_poses.shape[-2], adjusted_poses.shape[-1]))
                 adjusted_poses = adjusted_poses.reshape(-1, self.config.num_cams, adjusted_poses.shape[-2], adjusted_poses.shape[-1]).transpose(-2, -1)
@@ -360,25 +373,32 @@ class uncert_net_wrapper():
 
         return x
 
-    def mpjpe(self, predicted, target):
+    def mpjpe(self, predicted, target, mean=True):
         """
         Mean per-joint position error (i.e. mean Euclidean distance),
         often referred to as "Protocol #1" in many papers.
         """
         assert predicted.shape == target.shape
-        return torch.mean(torch.norm(predicted - target, dim=len(target.shape)-1))
+        if mean:
+            err = torch.mean(torch.norm(predicted - target, dim=len(target.shape)-1))
+        else:
+            err = torch.norm(predicted - target, dim=len(target.shape)-1)
+        return err
 
-    def n_mpjpe(self, predicted, target):
+    def n_mpjpe(self, predicted, target, mean=True):
         """
         Normalized MPJPE (scale only), adapted from:
         https://github.com/hrhodin/UnsupervisedGeometryAwareRepresentationLearning/blob/master/losses/poses.py
         """
         assert predicted.shape == target.shape
         
-        norm_predicted = torch.mean(torch.sum(predicted**2, dim=-1, keepdim=True), dim=-2, keepdim=True)
-        norm_target = torch.mean(torch.sum(target*predicted, dim=-1, keepdim=True), dim=-2, keepdim=True)
+        norm_predicted = torch.sum(predicted**2, dim=-1, keepdim=True)
+        norm_target = torch.sum(target*predicted, dim=-1, keepdim=True)
+        if mean:
+            norm_predicted = torch.mean(norm_predicted, dim=-2, keepdim=True)
+            norm_target = torch.mean(norm_target, dim=-2, keepdim=True)
         scale = norm_target / (norm_predicted+0.0001)
-        return self.mpjpe(scale * predicted, target)
+        return self.mpjpe(scale * predicted, target, mean=mean)
 
     def p_mpjpe(self, predicted, target):
         """

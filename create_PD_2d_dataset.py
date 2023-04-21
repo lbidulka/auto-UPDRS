@@ -3,6 +3,7 @@ import fnmatch
 import pickle
 from types import SimpleNamespace
 import json
+import numpy as np
 
 from utils.info import subjects_ALL_id_dict, subjects_All_date, subjects_All, subjects_new_sys, new_sys_vid_suffixes
 from utils import cam_sys_info
@@ -122,13 +123,9 @@ def compile_JSON(config):
     Builds a combined task dataset (JSON) of 2D pose predictions from per-subject-per-channel alphapose pred JSONs
     '''
     print("\nCompiling predictions into JSON...")
+    assert len(config.chs) == 2, "Must use a pair of channels for now..."
 
     kpts_dict = {}
-    # if config.fill_existing_JSON:
-    #     print("Adding to existing JSON: {}".format(config.JSON_dataset_outpath))
-    #     with open(config.JSON_dataset_outpath, 'r') as f:
-    #         kpts_dict = json.load(f)
-
     for S_id, id in subjects_ALL_id_dict.items():
         if S_id in config.subjs_to_compile:
             print("\n--- {}: ---".format(S_id))
@@ -138,6 +135,14 @@ def compile_JSON(config):
             # FOR NOW MUST USE A PAIR OF CHANNELS
             kpts_dict = filter_alphapose_results(in_json_path, S_id, config.updrs_task, config.chs, kpts_dict)
             print("  Successfully loaded alphapose data.")
+    # Print quick summary of the dataset
+    print("\n --- Summary of dataset ---")
+    print("  Total num subjects: ", len(kpts_dict.keys()))
+    print("  Total num videos: ", sum([len(kpts_dict[subj][config.updrs_task].keys()) for subj in kpts_dict.keys()]))
+    print("  Total num new sys (training) frames: ", sum([kpts_dict[subj][config.updrs_task]['pos'][0].shape[0] for subj in kpts_dict.keys() if subj in subjects_new_sys]))
+    print("  Avg num new sys (training) frames: ", np.mean([kpts_dict[subj][config.updrs_task]['pos'][0].shape[0] for subj in kpts_dict.keys() if subj in subjects_new_sys]))
+    print("  Total num old sys frames: ", sum([kpts_dict[subj][config.updrs_task]['pos'][0].shape[0] for subj in kpts_dict.keys() if subj not in subjects_new_sys]))
+    print("  Avg num old sys frames: ", np.mean([kpts_dict[subj][config.updrs_task]['pos'][0].shape[0] for subj in kpts_dict.keys() if subj not in subjects_new_sys]))
     # Pickle the 2d keypoints dict
     if config.save_JSON:
         print("\nSaving to ", config.JSON_dataset_outpath)
@@ -150,12 +155,12 @@ def compile_JSON(config):
 def get_config():
     config = SimpleNamespace()
     # Tasks
-    config.get_2d_preds = False  # Proces videos to get 2d preds?
-    config.compile_JSON = True  # Compile 2d preds into JSON dataset file?
+    config.get_2d_preds = True  # Proces videos to get 2d preds?
+    config.compile_JSON = False  # Compile 2d preds into JSON dataset file?
 
     # config.subjs_to_get_preds = subjects_All
-    config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
-    # config.subjs_to_get_preds = subjects_new_sys
+    # config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
+    config.subjs_to_get_preds = subjects_new_sys
     # config.subjs_to_get_preds = ["S29"]
 
     # config.subjs_to_compile = ['S01', 'S28', 'S29', 'S31']
@@ -164,35 +169,37 @@ def get_config():
     # config.subjs_to_compile = ['S29']
     # config.subjs_to_compile = ['S31']
     # config.subjs_to_compile = subjects_new_sys
-    config.subjs_to_compile = [subj for subj in subjects_All if subj not in subjects_new_sys]
-    # config.subjs_to_compile = subjects_All
+    # config.subjs_to_compile = [subj for subj in subjects_All if subj not in subjects_new_sys]
+    config.subjs_to_compile = subjects_All
     
     # Settings
     config.save_preds = True            # Save the 2d preds?
     config.overwrite_ap_preds = False  # Overwrite existing 2d preds?
-    config.save_JSON = True             # Save the compiled JSON dataset file?
+    config.save_JSON = False             # Save the compiled JSON dataset file?
 
-    config.limit_num_frames = True  # DEBUG: limit number of frames to process
-    config.lim_secs = 10            # Mohsen used 2 min per video 
+    config.limit_num_frames = False  # DEBUG: limit number of frames to process
+    config.lim_secs = 30            # Mohsen used 2 min per video 
 
-    # config.updrs_task = "free_form_oval"
+    config.updrs_task = "free_form_oval"
     # config.chs = ["003", "004"]   # Free Oval
+    config.chs = ["001"]# , "002"]   # Free Oval
 
-    config.updrs_task = "tug_stand_walk_sit"
-    config.chs = ["006", "007"]     # TUG
+    # config.updrs_task = "tug_stand_walk_sit"
+    # config.chs = ["006", "007"]     # TUG
+    # config.chs = ["001", "006"]
+    # config.chs = ["002", "006"]   # TUG for addressing chair issue
     # config.chs = ["006"]
     # config.chs = ["007"]     # TUG (same channel on new/old system, and non-training subject only using one channel)
 
     # NOTE: CHANNELS ARE NEW SYS NAMES, AND CONVERTED TO OLD SYS NAMES IN THE SCRIPT
-
-    assert len(config.chs) == 2, "Must use a pair of channels for now..."
 
     # Paths
     config.root_dir = os.path.dirname(os.path.realpath(__file__))
     config.videos_path = "/mnt/CAMERA-data/CAMERA/CAMERA visits/Mobility Visit/Study Subjects/"
     config.dataset_path = "/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/"
     config.AP_dir = config.root_dir + "/AlphaPose"
-    config.JSON_dataset_outpath = "{}/data/body/2d_proposals/{}_CH{}_CH{}_2D_kpts.pickle".format(config.root_dir, config.updrs_task,
+    if config.compile_JSON: 
+        config.JSON_dataset_outpath = "{}/data/body/2d_proposals/{}_CH{}_CH{}_2D_kpts.pickle".format(config.root_dir, config.updrs_task,
                                                                                                 config.chs[0], config.chs[1],)
     return config
 

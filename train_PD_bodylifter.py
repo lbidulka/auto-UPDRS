@@ -33,8 +33,8 @@ def get_config():
     config.updrs_tasks = 'tug_stand_walk_sit'
     # config.tasks = ['train']
     # config.tasks = ['val']
-    config.tasks = ['inference']
-    # config.tasks = ['train', 'inference']
+    # config.tasks = ['inference']
+    config.tasks = ['train', 'inference']
     # config.tasks = ['train', 'val', 'inference']
 
     config.chs = ["006", "007"]
@@ -213,8 +213,8 @@ def train(config):
             # Loss and backprop
             losses.loss = config.weight_rep * losses.rep + \
                         config.weight_view * losses.view + \
-                        config.weight_teacher * losses.teacher #+ \
-                        # config.weight_camera * losses.camera
+                        config.weight_teacher * losses.teacher + \
+                        config.weight_camera * losses.camera
             
             optimizer.zero_grad()
             losses.loss.backward()

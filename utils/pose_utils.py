@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from pytorch3d.transforms import so3_exponential_map as rodrigues
-from utils import metrics
 
 
 def procrustes_torch(X, Y):
@@ -53,14 +52,14 @@ def reshape_and_align(kpts_3d, angles, reproj=False, swap_legs=True):
     '''
     kpts_3d = kpts_3d.reshape(-1, 3, 15)    # (B, XYZ, 15)
 
+    # Project back from canonical camera space to original camera space
     if reproj:
         kpts_3d = rodrigues(angles)[0] @ kpts_3d.reshape(-1, 3, 15)
         angles = rodrigues(angles)[0]
 
-    # Project back from canonical camera space to original camera space
     kpts_3d = torch.transpose(kpts_3d, 2, 1) # swap axes to do procrustes
     kpts_3d -= kpts_3d[:, :1]   # center the poses on hip
-    kpts_3d_aligned = metrics.procrustes_torch(kpts_3d[0:1], kpts_3d)  # Aligns to first pose?
+    kpts_3d_aligned = procrustes_torch(kpts_3d[0:1], kpts_3d)  # Aligns to first pose?
     kpts_3d_aligned = np.transpose(kpts_3d_aligned, [0, 2, 1])  # swap axes back
 
     # need to swap the L and R legs for some reason... TODO: FIND OUT IF LIFTER OUTPUT ORDER IS AS INTENDED
