@@ -1,8 +1,10 @@
 # !!! (Course Project) Self-Supervised 3D Human Pose Estimation for Parkinson’s Disease and Beyond !!!
-I apologize for the extraneous code, as I did not end up having time to properly cleanup my codebase. I do my best here to specify the relevant code for this course project.
-
+I apologize for the extraneous code, as I did not end up having time to properly cleanup my codebase. Too many courses, not enough sleep :,(
+    
+I do my best here to specify the relevant code for this course project but because of the many turns this project took during its development, there is some extra code which ended up not being relevant to my results. I will create a cleaned up branch without any modifications whatsoever to the final project code and put a link here, but leave this here (besides the link addition) as it was at the time of submission on April 21st for transparency.
 
 ## Data:
+The original videos cannot be shared due to privacy concerns, but I have uploaded the extracted keypoints:
 - 'data/body/2d_proposals/tug_stand_walk_sit_CH006_CH007_2D_kpts.pickle' contains the filtered 2D backbone pose predictions (MVP-3D lifter training dataset)
 - 'data/body/3d_time_series/CH006_tug_stand_walk_sit.pickle' contains the MVP-3D predictions on the TUG data
 
