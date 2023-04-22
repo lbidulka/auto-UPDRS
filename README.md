@@ -1,3 +1,20 @@
+# !!! (Course Project) Self-Supervised 3D Human Pose Estimation for Parkinson’s Disease and Beyond !!!
+I apologize for the extraneous code, as I did not end up having time to properly cleanup my codebase. I do my best here to specify the relevant code for this course project.
+
+
+## MVP-3D Transfer to TUG data:
+- create_PD_2d_dataset.py uses AlphaPose to get the 2D backbone poses on the UPDRS video data and/or filters the 2D poses to create the MVP-3D lifter dataset
+    - data/body/body_dataset.py contains the code for filtering the 2D poses (filter_alphapose_results() and filter_ap_detections()) 
+    - utils/alphapose_filtering.py contains the pixel-space filter definitions
+- train_PD_bodylifter.py trains MVP-3D on the desired UPDRS task (Oval or TUG)
+
+## UncertNet Correction Network:
+
+- uncertnet_experiments.py contains high level control for training and evaluating UncertNet
+- uncertnet/uncertnet.py defines the UncerNet and its training
+- uncertnet/dataset.py helps load and handle data for the UncertNet
+
+
 # auto_UPDRS
 3D body and handpose keypoint extraction from videos of subjects performing UPDRS tasks & post-processing to evaluate their motion features and give UPDRS scores.
 
