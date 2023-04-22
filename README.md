@@ -4,27 +4,20 @@ I apologize for the extraneous code, as I did not end up having time to properly
 
 ## MVP-3D Transfer to TUG data:
 - create_PD_2d_dataset.py uses AlphaPose to get the 2D backbone poses on the UPDRS video data and/or filters the 2D poses to create the MVP-3D lifter dataset
-    - data/body/body_dataset.py contains the code for filtering the 2D poses (filter_alphapose_results() and filter_ap_detections()) 
-    - utils/alphapose_filtering.py contains the pixel-space filter definitions
+    - 'data/body/body_dataset.py' contains the code for filtering the 2D poses (filter_alphapose_results() and filter_ap_detections()) 
+    - 'utils/alphapose_filtering.py' contains the pixel-space filter definitions
 - train_PD_bodylifter.py trains MVP-3D on the desired UPDRS task (Oval or TUG)
 
 ## UncertNet Correction Network:
 
-- uncertnet_experiments.py contains high level control for training and evaluating UncertNet
-- uncertnet/uncertnet.py defines the UncerNet and its training
-- uncertnet/dataset.py helps load and handle data for the UncertNet
-
-
-# auto_UPDRS
-3D body and handpose keypoint extraction from videos of subjects performing UPDRS tasks & post-processing to evaluate their motion features and give UPDRS scores.
-
-## Uncertnet Project (Bootstrapping 3D pose estimation with multi view data)
----
-We can improve unsupervised 3D pose estimation since it uses multi-view data for training. We train an "uncertnet" network to predict the prediction error (to the triangulated pseudo-GT) of the 3D pose estimator, given predicted 3D kpts and the view_id. The uncertnet outputs are then used to do a weighted combo of the multi-view predictions for a given frame. 
-- 'uncertnet_experiments.py' contains high level control of the experiments
-- 'uncertnet/' contains the model wrapper, network, and dataset handling code for the experiments
+- 'uncertnet_experiments.py' contains high level control for training and evaluating UncertNet
+- 'uncertnet/uncertnet.py' defines the UncerNet and its training
+- 'uncertnet/dataset.py' helps load and handle data for the UncertNet
 - 'data/body/h36m/uncertnet' contains the numpy data files for training and testing
 
+
+# (NOT COURSE PROJECT FROM HERE ON) auto_UPDRS
+3D body extraction from videos of subjects performing UPDRS tasks & post-processing to evaluate their motion features and give UPDRS scores (in the future).
 
 ## 3D Body Pose Prediction
 ---
@@ -52,18 +45,3 @@ cd auto_UPDRS/model_checkpoints/Mohsens
 pip install --upgrade --no-cache-dir gdown
 gdown --folder --id 1GVjvla21_oXL4KpSbsEAPXRS7N93W1d5?usp=share_link
 ```
-
-4. Resave the model weight format to be more flexible by uncommenting the lines in "scoring.py":
-```
-helpers.fix_model_setup(input_args.models_path + 'body_pose/Mohsens/model_lifter.pt', 
-                        input_args.models_path + 'body_pose/model_lifter.pt')
-```
-
-### Inference
-1. Use AlphaPose to extract 2D keypoint proposals from CAMERA data drive using "demo_inference.py" inside "auto_UPDRS/AlphaPose":
-```
-cd auto_UPDRS/AlphaPose
-python3 scripts/demo_inference.py --cfg configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml --checkpoint pretrained_models/halpe26_fast_res50_256x192.pth --indir /mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/<SUBJECT>/<TASK+CHANNEL>/frames --save_img --outdir /mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/<SUBJECT>/<TASK+CHANNEL>
-```
-
-2. Use body_nets.Lifter() to predict 3D keypoints from 2D proposals (see scoring.py example)
