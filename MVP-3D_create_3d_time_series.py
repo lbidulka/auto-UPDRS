@@ -155,8 +155,16 @@ def get_preds(input_args):
                 print(subj[0], end=', ')
                 # print(pred_save[0][0,:1], end=', ')
                 print(pred_save[0].shape)
+                if subj == ['S04']: print(pred_save[0][0])
                 np.save(preds_outpath + subj[0], np.concatenate(pred_save))
         print(' done!')
+    
+    # Check outputs
+    ch3_data = np.load(outpath + 'CH3/finetune_3d_canonspace/Predictions_S04.npy')
+    ch4_data = np.load(outpath + 'CH4/finetune_3d_canonspace/Predictions_S04.npy')
+
+    print(ch3_data[0][0])
+    print(ch4_data[0][0])
 
 
 def get_args():

@@ -101,7 +101,7 @@ def get_AlphaPoses(config):
                             ap_cmd = "python3 {} --cfg \"{}\" --checkpoint \"{}\" ".format("scripts/demo_inference.py", 
                                                                                 "configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml", 
                                                                                 "pretrained_models/halpe26_fast_res50_256x192.pth")
-                            ap_cmd += "--sp --debug --gpu 0,1 --detbatch 1 --posebatch 30 --qsize 128 "
+                            ap_cmd += "--sp --debug --gpu 1 --detbatch 1 --posebatch 30 --qsize 128 "
                             # ap_cmd += "--debug True --qsize 512 --posebatch 32 "
                             if config.limit_num_frames :
                                 ap_cmd += "--maxframes {} ".format(num_frames)
@@ -155,8 +155,8 @@ def compile_JSON(config):
 def get_config():
     config = SimpleNamespace()
     # Tasks
-    config.get_2d_preds = True  # Proces videos to get 2d preds?
-    config.compile_JSON = False  # Compile 2d preds into JSON dataset file?
+    config.get_2d_preds = False  # Proces videos to get 2d preds?
+    config.compile_JSON = True  # Compile 2d preds into JSON dataset file?
 
     # config.subjs_to_get_preds = subjects_All
     # config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
@@ -168,9 +168,9 @@ def get_config():
     # config.subjs_to_compile = ['S28']
     # config.subjs_to_compile = ['S29']
     # config.subjs_to_compile = ['S31']
-    # config.subjs_to_compile = subjects_new_sys
+    config.subjs_to_compile = subjects_new_sys
     # config.subjs_to_compile = [subj for subj in subjects_All if subj not in subjects_new_sys]
-    config.subjs_to_compile = subjects_All
+    # config.subjs_to_compile = subjects_All
     
     # Settings
     config.save_preds = True            # Save the 2d preds?
@@ -182,7 +182,9 @@ def get_config():
 
     config.updrs_task = "free_form_oval"
     # config.chs = ["003", "004"]   # Free Oval
-    config.chs = ["001"]# , "002"]   # Free Oval
+    config.chs = ["001" , "002"]   # Free Oval
+    # config.chs = ["002"]  
+    # config.chs = ["001" , "004"]   # Free Oval
 
     # config.updrs_task = "tug_stand_walk_sit"
     # config.chs = ["006", "007"]     # TUG
