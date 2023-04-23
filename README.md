@@ -3,6 +3,8 @@ I apologize for the extraneous code, as I did not end up having time to properly
     
 I do my best here to specify the relevant code for this course project but because of the many turns this project took during its development, there is some extra code which ended up not being relevant to my results. I will create a cleaned up branch without any modifications whatsoever to the final project code and put a link here, but leave this here (besides the link addition) as it was at the time of submission on April 21st for transparency.
 
+EDIT (Apr 23): Please see the [course-proj-cleanup branch of this repo](https://github.com/lbidulka/auto_UPDRS/tree/course-proj-cleanup) for a much improved README, much clearer file names, and the removal of some outdated files. No actual code was modified in doing so, and of course the file histories can be checked to verify this. While I urge my reviewers to at least read that README instead of this one (if they dont use that branch to evaluate), I've left this one here as is for transparency. Sorry for the mess.
+
 ## Data:
 The original videos cannot be shared due to privacy concerns, but I have uploaded the extracted keypoints:
 - 'data/body/2d_proposals/tug_stand_walk_sit_CH006_CH007_2D_kpts.pickle' contains the filtered 2D backbone pose predictions (MVP-3D lifter training dataset)
