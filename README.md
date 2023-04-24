@@ -17,10 +17,7 @@ Main branch is left as it was at the time of submission for transparency.
 - 'uncertnet_create_dataset.py' 
     - uses MVP-3D to create the uncertnet training dataset from Human 3.6M
     - is a bit clunky and not fully consistent with the MVP-3D transfer format since it was done earlier, but it works
-    - due to bad design choices and limited time, this is done like so:
-        - clone the original MVP-3D repo: [PD_Gait_labeling](https://github.com/mgholamikn/PD_Gait_labeling)
-        - As described in the example Google Colab of [PD_Gait_labeling](https://github.com/mgholamikn/PD_Gait_labeling), download the data and pre-trained models
-        - copy this 'uncertnet_create_dataset.py' script to the main directory of [PD_Gait_labeling](https://github.com/mgholamikn/PD_Gait_labeling) and run it there to produce the .npy files for training uncertnet
+    - follow description in "Data" section below to use it correctly to generate the UncertNet dataset
 - 'uncertnet_experiments.py' 
     - provides high level control for training and evaluating UncertNet
 - 'uncertnet/uncertnet.py' 
@@ -41,6 +38,7 @@ The original UPDRS task videos cannot be shared due to privacy concerns, but I h
     - clone the original MVP-3D repo: [PD_Gait_labeling](https://github.com/mgholamikn/PD_Gait_labeling)
     - As described in the example Google Colab of [PD_Gait_labeling](https://github.com/mgholamikn/PD_Gait_labeling), download the data and pre-trained models
     - copy this 'uncertnet_create_dataset.py' script to the main directory of [PD_Gait_labeling](https://github.com/mgholamikn/PD_Gait_labeling) and run it there to produce the .npy files for training uncertnet
+    - copy all the .npy files into this repo under 'data/body/h36m/uncertnet'
 
 
 <!-- ## MVP-3D Transfer to TUG data:
