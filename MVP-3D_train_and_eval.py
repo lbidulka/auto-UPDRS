@@ -30,32 +30,37 @@ def get_config():
     # Tasks
     # --------------------------------------------------
     # config.updrs_tasks = 'free_form_oval'
-    config.updrs_tasks = 'tug_stand_walk_sit'
+    # config.updrs_tasks = 'tug_stand_walk_sit'
+    config.updrs_tasks = ['tug_stand_walk_sit', 'free_form_oval']
+
     # config.tasks = ['train']
-    # config.tasks = ['val']
-    # config.tasks = ['inference']
-    config.tasks = ['train', 'inference']
+    config.tasks = ['inference']
+    # config.tasks = ['train', 'inference']
     # config.tasks = ['train', 'val', 'inference']
 
-    config.chs = ["006", "007"]
-    inf_ch_idx = 0
-    config.inference_ch = 'cam1' if inf_ch_idx else 'cam0'  # Only one channel is used to produce the outputs #TODO: MAKE THIS MORE FLEXIBLE
+    config.chs = ["002", "006"]
+    config.inf_ch_idx = 1
+    config.inference_ch = 'cam1' if config.inf_ch_idx else 'cam0'  # Only one channel is used to produce the outputs #TODO: MAKE THIS MORE FLEXIBLE
 
     # Training
     # --------------------------------------------------
     config.train_subjs = info.subjects_new_sys
     # config.train_subjs = ['S01', 'S28', 'S29',]
+
     # config.val_subjs = ['S31']
-    # config.inference_subjs = [subj for subj in info.subjects_All if subj not in ['S22', 'S23', 'S33']]
+
+    # config.inference_subjs = info.subjects_new_sys
+    # config.inference_subjs = [subj for subj in info.subjects_All if subj not in ['S21']]
     config.inference_subjs = info.subjects_All
 
+    # Hyperparams
     config.learning_rate = 0.0001
     config.weight_decay = 1e-5
     config.train_bs = 16
     config.eval_bs = 4096
-    config.N_epochs = 5
+    config.N_epochs = 4
 
-    # weights for the different losses
+    # loss weights
     config.weight_rep = 1
     config.weight_view = 1
     config.weight_camera = 0.1
@@ -66,14 +71,17 @@ def get_config():
     config.root_path = 'auto_UPDRS/'
     config.data_path = config.root_path + 'data/body/2d_proposals/'
     # config.datafile = config.data_path + config.updrs_tasks + '_2D_kpts.pickle'
-    config.datafile = "{}{}_CH{}_CH{}_2D_kpts.pickle".format(config.data_path, config.updrs_tasks, config.chs[0], config.chs[1])
+    # config.datafile = "{}{}_CH{}_CH{}_2D_kpts.pickle".format(config.data_path, config.updrs_tasks, config.chs[0], config.chs[1])
+    config.datafile = "{}all_tasks_2D_kpts.pickle".format(config.data_path,)
 
-    config.lifter_ckpt_path = config.root_path + 'model_checkpoints/body_pose/PD/' + '{}_3D_lifter.pt'.format(config.updrs_tasks)
+    config.lifter_ckpt_path = config.root_path + 'model_checkpoints/body_pose/PD/' + 'all_tasks_3D_lifter.pt'
+    # config.lifter_ckpt_path = config.root_path + 'model_checkpoints/body_pose/PD/' + '{}_3D_lifter.pt'.format(config.updrs_tasks)
     # config.teacher_ckpt_path = config.root_path + 'model_checkpoints/body_pose/' + 'model_lifter_ap2d_ap3d.pt'
     config.teacher_ckpt_path = config.root_path + 'model_checkpoints/body_pose/Mohsens/' + 'model_pretrain.pt'
 
-    config.inference_out_path = '{}data/body/3d_time_series/CH{}_{}.pickle'.format(config.root_path, config.chs[inf_ch_idx], 
-                                                                            config.updrs_tasks,)
+    config.inference_out_path = '{}data/body/3d_time_series/all_tasks_CH{}.pickle'.format(config.root_path, config.chs[config.inf_ch_idx],)
+    # config.inference_out_path = '{}data/body/3d_time_series/CH{}_{}.pickle'.format(config.root_path, config.chs[inf_ch_idx], 
+    #                                                                         config.updrs_tasks,)
     
     # Data format
     # --------------------------------------------------
@@ -249,7 +257,8 @@ def val(config):
     model.eval()
 
     poses_2d_val, confs_2d_val, out_subject_val = get_2D_data(config.val_subjs, config.updrs_tasks, 
-                                                            config.datafile, normalized=True, mohsens_output=True)
+                                                            config.datafile, old_sys_return_only=config.inf_ch_idx,
+                                                            normalized=True, mohsens_output=True)
     val_set = PD_AP_Dataset(poses_2d_val, confs_2d_val, out_subject_val)
     val_loader = data.DataLoader(val_set, batch_size=config.eval_bs, shuffle=False, num_workers=0)
 
@@ -324,46 +333,49 @@ def inference(config):
     preds = {}
     with torch.no_grad():
         for subj in tqdm(config.inference_subjs):
-            poses_2d_inference, confs_2d_inference, out_subject_inference = get_2D_data([subj], config.updrs_tasks, 
-                                                            config.datafile, normalized=True, mohsens_output=True)
-            inference_set = PD_AP_Dataset(poses_2d_inference, confs_2d_inference, out_subject_inference)
-            inference_loader = data.DataLoader(inference_set, batch_size=config.eval_bs, shuffle=False, num_workers=0)
-
-            preds[subj] = {'in_2d': [], 'in_confs': [], 'raw_3d_preds': [], 'aligned_3d_preds': [], 'pred_rots': []}
-            for i, sample in enumerate(inference_loader):
-                poses_2d = {key:sample[key] for key in config.all_cams}
-                inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts*2)).cuda()
-                inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts)).cuda()
-
-                # poses_2d is a dictionary. It needs to be reshaped to be propagated through the model.
-                cnt = 0
-                for b in range(poses_2d[config.inference_ch].shape[0]):
-                    inp_poses_2d[cnt] = poses_2d[config.inference_ch][b]
-                    inp_confs_2d[cnt] = sample['confidences'][0][b]
-                    cnt += 1
+            preds[subj] = {}
+            for task in config.updrs_tasks:
+                poses_2d_inference, confs_2d_inference, out_subject_inference = get_2D_data([subj], [task], 
+                                                                config.datafile, old_sys_return_only=config.inf_ch_idx,
+                                                                normalized=True, mohsens_output=True)
+                inference_set = PD_AP_Dataset(poses_2d_inference, confs_2d_inference, out_subject_inference)
+                inference_loader = data.DataLoader(inference_set, batch_size=config.eval_bs, shuffle=False, num_workers=0)
                 
-                # forward pass
-                pred_poses, pred_cam_angles = model(inp_poses_2d, inp_confs_2d)
-                pred_rots = rodrigues(pred_cam_angles)
+                preds[subj][task] = {'in_2d': [], 'in_confs': [], 'raw_3d_preds': [], 'aligned_3d_preds': [], 'pred_rots': []}
+                for i, sample in enumerate(inference_loader):
+                    poses_2d = {key:sample[key] for key in config.all_cams}
+                    inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts*2)).cuda()
+                    inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts)).cuda()
 
-                # Save
-                preds[subj]['in_2d'].append(inp_poses_2d.detach().cpu().numpy())
-                preds[subj]['in_confs'].append(inp_confs_2d.detach().cpu().numpy())
-                preds[subj]['raw_3d_preds'].append(pred_poses.reshape(-1, 3, config.num_kpts).detach().cpu().numpy())
-                
-                pred_poses_aligned = pred_poses.reshape(-1, 3, config.num_kpts).detach().transpose(2, 1)
-                pred_poses_aligned -= pred_poses_aligned[:, :1]
-                # pred_poses_aligned = np.transpose(procrustes_torch(pred_poses_aligned[0:1], pred_poses_aligned), (0, 2, 1))
-                pred_poses_aligned = procrustes_torch(pred_poses_aligned[0:1], pred_poses_aligned)
+                    # poses_2d is a dictionary. It needs to be reshaped to be propagated through the model.
+                    cnt = 0
+                    for b in range(poses_2d[config.inference_ch].shape[0]):
+                        inp_poses_2d[cnt] = poses_2d[config.inference_ch][b]
+                        inp_confs_2d[cnt] = sample['confidences'][0][b]
+                        cnt += 1
+                    
+                    # forward pass
+                    pred_poses, pred_cam_angles = model(inp_poses_2d, inp_confs_2d)
+                    pred_rots = rodrigues(pred_cam_angles)
 
-                preds[subj]['aligned_3d_preds'].append(pred_poses_aligned)
-                preds[subj]['pred_rots'].append(pred_rots.detach().cpu().numpy())
+                    # Save
+                    preds[subj][task]['in_2d'].append(inp_poses_2d.detach().cpu().numpy())
+                    preds[subj][task]['in_confs'].append(inp_confs_2d.detach().cpu().numpy())
+                    preds[subj][task]['raw_3d_preds'].append(pred_poses.reshape(-1, 3, config.num_kpts).detach().cpu().numpy())
+                    
+                    pred_poses_aligned = pred_poses.reshape(-1, 3, config.num_kpts).detach().transpose(2, 1)
+                    pred_poses_aligned -= pred_poses_aligned[:, :1]
+                    # pred_poses_aligned = np.transpose(procrustes_torch(pred_poses_aligned[0:1], pred_poses_aligned), (0, 2, 1))
+                    pred_poses_aligned = procrustes_torch(pred_poses_aligned[0:1], pred_poses_aligned)
 
-            preds[subj]['in_2d'] = np.concatenate(preds[subj]['in_2d'], axis=0)
-            preds[subj]['in_confs'] = np.concatenate(preds[subj]['in_confs'], axis=0)
-            preds[subj]['raw_3d_preds'] = np.concatenate(preds[subj]['raw_3d_preds'], axis=0)
-            preds[subj]['aligned_3d_preds'] = np.concatenate(preds[subj]['aligned_3d_preds'], axis=0)
-            preds[subj]['pred_rots'] = np.concatenate(preds[subj]['pred_rots'], axis=0)
+                    preds[subj][task]['aligned_3d_preds'].append(pred_poses_aligned)
+                    preds[subj][task]['pred_rots'].append(pred_rots.detach().cpu().numpy())
+
+                preds[subj][task]['in_2d'] = np.concatenate(preds[subj][task]['in_2d'], axis=0)
+                preds[subj][task]['in_confs'] = np.concatenate(preds[subj][task]['in_confs'], axis=0)
+                preds[subj][task]['raw_3d_preds'] = np.concatenate(preds[subj][task]['raw_3d_preds'], axis=0)
+                preds[subj][task]['aligned_3d_preds'] = np.concatenate(preds[subj][task]['aligned_3d_preds'], axis=0)
+                preds[subj][task]['pred_rots'] = np.concatenate(preds[subj][task]['pred_rots'], axis=0)
 
     # pickle the predictions 
     print("\nSaving to ", config.inference_out_path)

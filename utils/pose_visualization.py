@@ -166,9 +166,9 @@ def visualize_pose(kpts_3D=None, kpts_2D=None,
         plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
         title = 'Subject 3D Pose (Cam space)' if reproj else 'Subject 3D Pose (Canonical space)'
         ax.set_title(title)
-        ax.set_xlabel('Z')
-        ax.set_ylabel('X')
-        ax.set_zlabel('Y')
+        # ax.set_xlabel('Z')
+        # ax.set_ylabel('X')
+        # ax.set_zlabel('Y')
         # ax.view_init(elev=25., azim=-110.)
         ax.view_init(elev=20., azim=135) #azim=-210.)
 
@@ -181,6 +181,57 @@ def visualize_pose(kpts_3D=None, kpts_2D=None,
     if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path, dpi=500, bbox_inches='tight')
     if show_fig: plt.show()
     plt.clf()
+
+def visualize_multi_view_pose(kpts_3D=None, kpts_2D=None, 
+                              lifter_in_view=None,
+                              save_fig=False, show_fig=False, out_fig_path=None):
+    '''
+    Visualization of the 2 input 2D pose views and the estimated 3D pose
+    
+    Args:
+        kpts_3D: 3D keypoints (3, 15), xyz by 15 keypoints in cam space or canonical (world) space
+        kpts_2D: 2D keypoints (30), xxx ... yyy
+        lifter_in_view: which of the 2D views was used as input for the 3D lifter?
+    '''
+    if kpts_2D is None and kpts_3D is None:
+        print("ERROR: No keypoints to visualize!")
+        return
+
+
+    fig = plt.figure(layout='constrained', )
+    spec = fig.add_gridspec(5, 2)
+
+    # 2D Plots at top   
+    # L view
+    ax = fig.add_subplot(spec[0, 0])
+    plot_2D_skeleton(kpts_2D[0], ax, proj_plot=False, plt_scatter=True)
+    ax.set_title('View 0 2D Pose {}'.format('' if lifter_in_view != 0 else '(Lifter Input)'))
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.invert_yaxis()
+    ax.set_xlim(-1,1)
+    # R view
+    ax = fig.add_subplot(spec[0, 1])
+    plot_2D_skeleton(kpts_2D[1], ax, proj_plot=False, plt_scatter=True)
+    ax.set_title('View 1 2D Pose {}'.format('' if lifter_in_view != 1 else '(Lifter Input)'))
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.invert_yaxis()
+    ax.set_xlim(-1,1)
+
+    # 3D Plots at bottom
+    ax = fig.add_subplot(spec[1:, :], projection='3d')
+    plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
+    ax.set_title('Lifted 3D Pose')
+    ax.view_init(elev=30., azim=125) 
+    ax.set_xlim(0.6, -0.6)
+    ax.set_ylim(-0.7, 0.7)
+    ax.set_zlim(-0.75, 0.75)
+
+    # Show/Save the figure
+    if (save_fig and (out_fig_path is not None)): plt.savefig(out_fig_path, dpi=500, bbox_inches='tight')
+    if show_fig: plt.show()
+    plt.close(fig)
 
 def visualize_reproj(kp_3D, kp_2D, save_fig=False, show_fig=False, out_fig_path=None):
     '''

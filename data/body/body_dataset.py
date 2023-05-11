@@ -8,28 +8,30 @@ import pickle
 
 from utils import info, alphapose_filtering, cam_sys_info
 
-def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, mohsens_output=False):
+def get_2D_data(subjs, tasks, data_path, normalized=True, mohsens_data=False, mohsens_output=False,
+                old_sys_return_only=0):
     '''
     Fetches the 2D pose data for specified subjects.
 
     TODO: ADD SUPPORT FOR ARBITRARY CHANNELS
 
     Args:
-        subj (str): subject ID
-        task (str): task name (e.g. 'free_form_oval', ...)
-            chs (list): list of channels to fill (e.g. ['001', '002',])    NOTE: THIS USES NEW SYS NAMING
-        data_path (str): path to the 2d kpts dataset
-        normalize (bool): if True, normalize the data
-        mohsens_data (bool): if True, load differently for Mohsens data, else use as is
-        mohsens_output (bool): if True, return the data in the same format as mohsens data
+        subj (str):                         subject ID
+        tasks (list of str):                list of task names (e.g. ['free_form_oval', ...])
+        chs (list):                         list of channels to fill (e.g. ['001', '002',])    NOTE: THIS USES NEW SYS NAMING
+        data_path (str):                    path to the 2d kpts dataset
+        normalize (bool):                   if True, normalize the data
+        mohsens_data (bool):                if True, load differently for Mohsens data, else use as is
+        mohsens_output (bool):              if True, return the data in the same format as mohsens data
+        old_sys_return_only (int):          for old system subjs, return data for this channel (0 or 1) for both outputs
     Returns: 
-        ch0_data (np.array): 2D pose data for view 0
-        ch1_data (np.array): 2D pose data for view 1
+        ch0_data (np.array):                2D pose data for view 0
+        ch1_data (np.array):                2D pose data for view 1
     '''
     # Load up all subjs
     keypoints_PD = np.load(data_path, allow_pickle=True)
     if mohsens_data:
-        task = 'WalkingOval'
+        tasks = ['WalkingOval']
         keypoints_PD = keypoints_PD['positions_2d'].item()  # contains all subjects
 
     for subject in keypoints_PD.keys():
@@ -56,25 +58,33 @@ def get_2D_data(subjs, task, data_path, normalized=True, mohsens_data=False, moh
                 keypoints_PD[subject][action]['subject'][cam_idx] = np.ones((kps.shape[0])) * int(subject[1:])
     
     # Get subjs of interest
-    ch0_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs])
-    ch0_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs])
-    ch0_subject = np.concatenate([keypoints_PD[subj][task]['subject'][0] for subj in subjs])
+    ch0_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs for task in tasks])
+    ch0_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs for task in tasks])
+    ch0_subject = np.concatenate([keypoints_PD[subj][task]['subject'][0] for subj in subjs for task in tasks])
 
-    # Check if old system
+    ch1_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs for task in tasks])
+    ch1_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs for task in tasks])
+    ch1_subject = np.concatenate([keypoints_PD[subj][task]['subject'][1] for subj in subjs for task in tasks])
+
+    # For the old system, we just return the data for one channel (as per Mohsens method)
+    # TODO: DO WE NEED TO DO THIS HERE? OR CAN WE JUST DO IT OUTSIDE, TO BE LESS CONFUSING?
     if cam_sys_info.cam_ver[subjs[0]] == 'old':
-        ch1_data = ch0_data
-        ch1_conf = ch0_conf
-        ch1_subject = ch0_subject
-    else:
-        ch1_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs])
-        ch1_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs])
-        ch1_subject = np.concatenate([keypoints_PD[subj][task]['subject'][1] for subj in subjs])
+        if old_sys_return_only == 0:
+            ch1_data = ch0_data
+            ch1_conf = ch0_conf
+            ch1_subject = ch0_subject
+        elif old_sys_return_only == 1:
+            ch0_data = ch1_data
+            ch0_conf = ch1_conf
+            ch0_subject = ch1_subject
+        else:
+            raise ValueError("old_sys_return_ch must be 0 or 1")
     
     if mohsens_output:
         # concat the subject data together for each channel
         out_poses_2d = np.array([ch0_data, ch1_data]) 
         out_confidences = np.array([ch0_conf, ch1_conf])
-        out_subject = np.array(ch0_subject)
+        out_subject = np.array(ch0_subject) if old_sys_return_only == 0 else np.array(ch1_subject)
         return out_poses_2d, out_confidences, out_subject
     else:
         return ch0_data, ch1_data, ch0_conf, ch1_conf 
@@ -88,7 +98,7 @@ def filter_ap_detections(ap_preds, ch):
         data: the alphapose output json file loaded in as a dictionary (ex: data1 = json.load(f))
         ch: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
     '''
-    filters = alphapose_filtering.AP_view_filters[ch]
+    bbx_filters = alphapose_filtering.AP_bbx_filters[ch]
 
     # regroup detections to be per-frame 
     frame_names = list(set([ap_preds[i]["image_id"] for i in range(len(ap_preds))]))
@@ -121,22 +131,22 @@ def filter_ap_detections(ap_preds, ch):
 
             confident = np.mean(np.asarray(detection['keypoints'])[[idx*3 + 2 for idx in joint_idxs]]) > conf_thresh # pred confidence threshold
             
-            # bbx width threshold
-            if (filters['bbx_h_min'] is None):
+            # bbx height threshold
+            if (bbx_filters['bbx_h_min'] is None):
                 bbx_large = True
             else:
-                bbx_large = (bbx_dy > filters['bbx_h_min'])     
+                bbx_large = (bbx_dy > bbx_filters['bbx_h_min'])     
 
             # subj in correct area in frame?
-            if (filters['x_min'] is None):
+            if (bbx_filters['x_min'] is None):
                 bbx_subj_loc = True
             else:
-                bbx_subj_loc = (bbx_x0 > filters['x_min'])
+                bbx_subj_loc = (bbx_x0 > bbx_filters['x_min'])
 
-            if (filters['x_max'] is None):
+            if (bbx_filters['x_max'] is None):
                 bbx_subj_loc = bbx_subj_loc
             else:
-                bbx_subj_loc = (bbx_x0 < filters['x_max']) and bbx_subj_loc
+                bbx_subj_loc = (bbx_x0 < bbx_filters['x_max']) and bbx_subj_loc
 
             # If detection is good, save it
             if (not_at_x_edge and not_at_y_edge and bbx_large and confident and bbx_subj_loc): 
@@ -194,7 +204,7 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
         
         # Load and process data from json file of camera channel
         ap_preds_json = '{}CH{}_alphapose-results.json'.format(data_path, ch if (cam_ver == 'new') else cam_sys_info.ch_new_to_old[ch])
-        print("Loading {}".format(ap_preds_json))
+        # print("Loading {}".format(ap_preds_json))
         with open(ap_preds_json) as f:
             ap_results = json.load(f)
             kpts.append(filter_ap_detections(ap_results, ch))
@@ -209,6 +219,17 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
         kpts_2 = kpts_2[:min(kpts_1.shape[0], kpts_2.shape[0])]
 
     print("kpt1.shape: {} kpt2.shape: {}".format(kpts_1.shape, kpts_2.shape))
+
+    # Keep only frames from the task performance (only works for new cam system)
+    if cam_ver == 'new':
+        fps = 30
+        start_frame = alphapose_filtering.task_timestamps[subj][task]['start'] * fps
+        end_frame = alphapose_filtering.task_timestamps[subj][task]['end'] * fps
+
+        kpts_1 = kpts_1[start_frame:end_frame]
+        kpts_2 = kpts_2[start_frame:end_frame]
+
+        print("TASK TIME FILTERED: kpt1.shape: {} kpt2.shape: {}".format(kpts_1.shape, kpts_2.shape))
     
 
     # Remove frames with 0 pose on channels
@@ -222,6 +243,16 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
     
     kpts_1 = kpts_1[pose_exists_1]
     kpts_2 = kpts_2[pose_exists_2]
+
+    # TEMP: if no poses found, insert a single all-0 pose (specifically, TUG task S21 vid is too short)
+    if (kpts_1.shape[0] == 0):
+        print("\n!!! ---> WARNING: No poses found for subject {}, channel {}, in task {}".format(subj, 0, task))
+        print("inserting a single all-0 pose...\n")
+        kpts_1 = np.zeros((1, 16, 3)) + 1e-6
+    if (kpts_2.shape[0] == 0):
+        print("\n!!! ---> WARNING: No poses found for subject {}, channel {}, in task {}".format(subj, 1, task))
+        print("inserting a single all-0 poses...\n")
+        kpts_2 = np.zeros((1, 16, 3)) + 1e-6
 
     print("EXISTANCE FILTERED: kpt1.shape: {} kpt2.shape: {}".format(kpts_1.shape, kpts_2.shape))
     
@@ -238,11 +269,15 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
 class body_ts_loader():
     '''
     For loading the extracted 3D body keypoints from the UPDRS dataset
-
-    args:
-        pickled: if False, loads the individual numpy files (Mohsens style), else loads the pickled dictionary (my style)
     '''
-    def __init__(self, ts_path, subjects = info.subjects_All, pickled=False, proc_aligned=True) -> None:
+    def __init__(self, ts_path, task, subjects=info.subjects_All, pickled=False, proc_aligned=True,
+                smoothing=True, zero_rot=True,  # normalization options
+                ) -> None:
+        '''
+            args:
+            pickled: if False, loads the individual numpy files (Mohsens style), else loads the pickled dictionary (my style)
+            task: the UPDRS task to load    # TODO: ADD SUPPORT FOR MULTIPLE TASKS
+        '''
         self.subjects = subjects
         self.ts_path = ts_path
         self.feat_names = info.clinical_gait_feat_names
@@ -255,33 +290,37 @@ class body_ts_loader():
         for idx, subj in enumerate(subjects):
             # Load as needed
             if pickled:
-                data_normal = all_body_3d_preds[subj]['aligned_3d_preds'] if proc_aligned else all_body_3d_preds[subj]['raw_3d_preds']
+                data_normal = all_body_3d_preds[subj][task]['aligned_3d_preds'] if proc_aligned else all_body_3d_preds[subj][task]['raw_3d_preds']
             else:
                 data_normal = np.load(ts_path + 'Predictions_' + subj + '.npy')     # (num_frames, num_joints, 3)
 
-            for ii in range(15):
-                for jj in range(3):
-                    data_normal[:,ii,jj] = savgol_filter(data_normal[:,ii,jj], 11, 3)   # Smoothing
+            if smoothing:
+                for ii in range(15):
+                    for jj in range(3):
+                        data_normal[:,ii,jj] = savgol_filter(data_normal[:,ii,jj], 11, 3)   # Smoothing
 
             # Find Rot matrix of pose
-            Rhip_idx = info.PD_3D_lifter_skeleton['RL'][1]
-            Lhip_idx = info.PD_3D_lifter_skeleton['LL'][1]
-            Neck_idx = info.PD_3D_lifter_skeleton['T'][1]
-            Hip_idx = info.PD_3D_lifter_skeleton['T'][2]
+            if zero_rot:
+                Rhip_idx = info.PD_3D_lifter_skeleton['RL'][1]
+                Lhip_idx = info.PD_3D_lifter_skeleton['LL'][1]
+                Neck_idx = info.PD_3D_lifter_skeleton['T'][1]
+                Hip_idx = info.PD_3D_lifter_skeleton['T'][2]
 
-            x_vec = data_normal[:, Lhip_idx] - data_normal[:, Rhip_idx]      # L Hip - R Hip
-            y_vec = data_normal[:, Neck_idx] - data_normal[:, Hip_idx]      # Neck - Pelvis
-            x_vec /= np.linalg.norm(x_vec, keepdims=True, axis=-1)
-            y_vec /= np.linalg.norm(y_vec, keepdims=True, axis=-1)
-            z_vec = np.cross(x_vec, y_vec)
+                x_vec = data_normal[:, Lhip_idx] - data_normal[:, Rhip_idx]      # L Hip - R Hip
+                y_vec = data_normal[:, Neck_idx] - data_normal[:, Hip_idx]      # Neck - Pelvis
+                x_vec /= np.linalg.norm(x_vec, keepdims=True, axis=-1)
+                y_vec /= np.linalg.norm(y_vec, keepdims=True, axis=-1)
+                z_vec = np.cross(x_vec, y_vec)
 
-            rotation_matrix = np.ones((len(x_vec), 3, 3))
-            rotation_matrix[:,:,0] = x_vec
-            rotation_matrix[:,:,1] = y_vec
-            rotation_matrix[:,:,2] = z_vec
+                rotation_matrix = np.ones((len(x_vec), 3, 3))
+                rotation_matrix[:,:,0] = x_vec
+                rotation_matrix[:,:,1] = y_vec
+                rotation_matrix[:,:,2] = z_vec
+
+                data_normal = np.matmul(data_normal, rotation_matrix)
 
             # Rot the pose back to centre
-            self.data_normal.append(np.matmul(data_normal, rotation_matrix))
+            self.data_normal.append(data_normal)
 
     # Get the norm timeseries data for a specific subject
     def get_data_norm(self, subject):

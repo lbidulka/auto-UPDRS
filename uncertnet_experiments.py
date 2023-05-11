@@ -32,6 +32,7 @@ def init_logging(args, config):
             "use_camID": config.use_camID,
             "out_per_kpt": config.out_per_kpt,
             "out_directional": config.out_directional,
+            "hidden_dim": config.hidden_dim,
             # Training
             "lr": config.lr,
             "epochs": config.epochs,
@@ -46,10 +47,10 @@ def init_logging(args, config):
 def get_config(args):
     config = SimpleNamespace()
     # Logging -----------------------
-    config.log = False
+    config.log = True
     # -------------------------------
     # Tasks/Experiments
-    config.num_runs = 1
+    config.num_runs = 3
     config.train = True
     config.eval = True
 
@@ -60,11 +61,15 @@ def get_config(args):
     config.uncertnet_save_ckpts = True
 
     # Model Architecture
+    config.simple_linear = False
+
+    config.hidden_dim = 8
+
     config.use_confs = False        # use 3D pred confidences?
+    config.use_camID = False
+
     config.out_per_kpt = True       # output per-kpt err vector?
     config.out_directional = True   # output directional err vector?
-    config.use_camID = False
-    config.hidden_dim = 512
     config.num_kpts = 15
 
     if config.out_per_kpt:
@@ -75,7 +80,7 @@ def get_config(args):
             config.out_dim *= 3
 
     # Data format
-    config.use_gt_targets = True
+    config.use_gt_targets = False   # use GT 2D/3D poses as targets? and GT-based backbone?
     config.cams = [
                     0, 
                     1,
@@ -83,13 +88,18 @@ def get_config(args):
                     3
                 ]  # All Cam IDs: [0, 1, 2, 3]
     config.num_cams = len(config.cams)
-    config.err_scale = 1000   # Scale the err by this much to make it easier to train?
+    config.err_scale = 25   # Scale the err by this much to make it easier to train?
     # Training
-    config.val_split = 0.2
+    config.val_split = 0.3
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
-    config.epochs = 3
+    config.epochs = 8
     config.batch_size = 4096
-    config.lr = 3e-4
+    config.lr = 1e-3    # 1e-3
+    if config.simple_linear == True:
+        config.lr = 1e-2
+
+    config.use_step_lr = False
+    config.step_lr_size = 1
     # Evaluation
     config.eval_batch_size = 4096
     # Model Paths

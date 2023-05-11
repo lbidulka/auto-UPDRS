@@ -28,7 +28,7 @@ subjects_All_date = ['20210223','20191114','20191120','20191112','20191119',
 # they have synchronized cams, no frame drops, and higher frame rate of 30fps
 subjects_new_sys = ['S01', 'S28', 'S29', 'S31']
 new_sys_vid_suffixes = {
-    'S01': {'free_form_oval': '20210223144019_20210223144243',
+    'S01': {'free_form_oval': '20210223144018_20210223144243', # 'free_form_oval': '20210223144019_20210223144243',
             'tug_stand_walk_sit': '20210223145241_20210223145331'},
     'S28': {'free_form_oval': '20210706134648_20210706134920',
             'tug_stand_walk_sit': '20210706135744_20210706135801'},

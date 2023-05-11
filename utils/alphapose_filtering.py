@@ -3,15 +3,23 @@ import numpy as np
 
 # Pixel-space filters for cleaning up the AlphaPose 2D pose predictions. 
 # NOTE: This uses "new" system view numbering!
-AP_view_filters = {
-        '001': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
-        '002': {"x_min": 1700, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
+AP_bbx_filters = {
+        '001': {"x_min": None, "x_max": 2700, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": 500, "bbx_h_max": None},
+        '002': {"x_min": None, "x_max": 1920, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": 500, "bbx_h_max": None},
         '003': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": 1000, "bbx_h_max": None},
         '004': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": 1000, "bbx_h_max": None},
         '005': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
-        '006': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": 2920, "bbx_h_min": None, "bbx_h_max": None},
+        '006': {"x_min": None, "x_max": 2920, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
         '007': {"x_min":  960, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
         '008': {"x_min": None, "x_max": None, "bbx_w_min": None, "bbx_w_max": None, "bbx_h_min": None, "bbx_h_max": None},
+}
+
+# Start and finish timestamps for each task
+task_timestamps = {
+        'S01': {'free_form_oval': {'start': 13, 'end': 146}, 'tug_stand_walk_sit': {'start': 28, 'end': 44}, },
+        'S28': {'free_form_oval': {'start': 20, 'end': 142}, 'tug_stand_walk_sit': {'start': 3, 'end': 17}, },
+        'S29': {'free_form_oval': {'start': 4, 'end': 126}, 'tug_stand_walk_sit': {'start': 2, 'end': 15}, },
+        'S31': {'free_form_oval': {'start': 14, 'end': 138}, 'tug_stand_walk_sit': {'start': 18, 'end': 35}, },
 }
 
 # Collection of timestamp (?) filters for AlphaPose outputs of "free_form_oval" task for CH3 (row1) and CH4 (row2)
