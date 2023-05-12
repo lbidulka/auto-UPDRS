@@ -50,8 +50,8 @@ def get_config():
     # config.val_subjs = ['S31']
 
     # config.inference_subjs = info.subjects_new_sys
-    # config.inference_subjs = [subj for subj in info.subjects_All if subj not in ['S21']]
-    config.inference_subjs = info.subjects_All
+    config.inference_subjs = [subj for subj in info.subjects_All if subj not in ['S21']]
+    # config.inference_subjs = info.subjects_All
 
     # Hyperparams
     config.learning_rate = 0.0001
@@ -268,8 +268,8 @@ def val(config):
         for i, sample in enumerate(val_loader):
             # not the most elegant way to extract the dictionary
             poses_2d = {key:sample[key] for key in config.all_cams}
-            inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts*2)).cuda()
-            inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts)).cuda()
+            inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0], config.num_kpts*2)).cuda()
+            inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0], config.num_kpts)).cuda()
 
             # poses_2d is a dictionary. It needs to be reshaped to be propagated through the model.
             cnt = 0
@@ -344,8 +344,8 @@ def inference(config):
                 preds[subj][task] = {'in_2d': [], 'in_confs': [], 'raw_3d_preds': [], 'aligned_3d_preds': [], 'pred_rots': []}
                 for i, sample in enumerate(inference_loader):
                     poses_2d = {key:sample[key] for key in config.all_cams}
-                    inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts*2)).cuda()
-                    inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0] * len(config.all_cams), config.num_kpts)).cuda()
+                    inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0], config.num_kpts*2)).cuda()
+                    inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0], config.num_kpts)).cuda()
 
                     # poses_2d is a dictionary. It needs to be reshaped to be propagated through the model.
                     cnt = 0
@@ -361,11 +361,10 @@ def inference(config):
                     # Save
                     preds[subj][task]['in_2d'].append(inp_poses_2d.detach().cpu().numpy())
                     preds[subj][task]['in_confs'].append(inp_confs_2d.detach().cpu().numpy())
-                    preds[subj][task]['raw_3d_preds'].append(pred_poses.reshape(-1, 3, config.num_kpts).detach().cpu().numpy())
+                    preds[subj][task]['raw_3d_preds'].append(pred_poses.reshape(-1, 3, config.num_kpts).transpose(2, 1).detach().cpu().numpy())
                     
                     pred_poses_aligned = pred_poses.reshape(-1, 3, config.num_kpts).detach().transpose(2, 1)
                     pred_poses_aligned -= pred_poses_aligned[:, :1]
-                    # pred_poses_aligned = np.transpose(procrustes_torch(pred_poses_aligned[0:1], pred_poses_aligned), (0, 2, 1))
                     pred_poses_aligned = procrustes_torch(pred_poses_aligned[0:1], pred_poses_aligned)
 
                     preds[subj][task]['aligned_3d_preds'].append(pred_poses_aligned)

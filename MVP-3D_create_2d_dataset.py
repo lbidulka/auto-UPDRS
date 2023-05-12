@@ -28,7 +28,7 @@ def get_config():
     # Settings
     config.save_preds = True            # Save the 2d preds?
     config.overwrite_ap_preds = False  # Overwrite existing 2d preds?
-    config.save_JSON = False             # Save the compiled JSON dataset file?
+    config.save_JSON = True             # Save the compiled JSON dataset file?
 
     config.limit_num_frames = False  # DEBUG: limit number of frames to process
     config.lim_secs = 1            # Mohsen used 2 min per video 
