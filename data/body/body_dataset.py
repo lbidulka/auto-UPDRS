@@ -57,14 +57,16 @@ def get_2D_data(subjs, tasks, data_path, normalized=True, mohsens_data=False, mo
                 keypoints_PD[subject][action]['conf'][cam_idx] = conf
                 keypoints_PD[subject][action]['subject'][cam_idx] = np.ones((kps.shape[0])) * int(subject[1:])
     
-    # Get subjs of interest
+    # Get data for subjs of interest
     ch0_data = np.concatenate([keypoints_PD[subj][task]['pos'][0] for subj in subjs for task in tasks])
     ch0_conf = np.concatenate([keypoints_PD[subj][task]['conf'][0] for subj in subjs for task in tasks])
     ch0_subject = np.concatenate([keypoints_PD[subj][task]['subject'][0] for subj in subjs for task in tasks])
+    ch0_frames = np.concatenate([keypoints_PD[subj][task]['idx'][0] for subj in subjs for task in tasks])
 
     ch1_data = np.concatenate([keypoints_PD[subj][task]['pos'][1] for subj in subjs for task in tasks])
     ch1_conf = np.concatenate([keypoints_PD[subj][task]['conf'][1] for subj in subjs for task in tasks])
     ch1_subject = np.concatenate([keypoints_PD[subj][task]['subject'][1] for subj in subjs for task in tasks])
+    ch1_frames = np.concatenate([keypoints_PD[subj][task]['idx'][1] for subj in subjs for task in tasks])
 
     # For the old system, we just return the data for one channel (as per Mohsens method)
     # TODO: DO WE NEED TO DO THIS HERE? OR CAN WE JUST DO IT OUTSIDE, TO BE LESS CONFUSING?
@@ -73,10 +75,12 @@ def get_2D_data(subjs, tasks, data_path, normalized=True, mohsens_data=False, mo
             ch1_data = ch0_data
             ch1_conf = ch0_conf
             ch1_subject = ch0_subject
+            ch1_frames = ch0_frames
         elif old_sys_return_only == 1:
             ch0_data = ch1_data
             ch0_conf = ch1_conf
             ch0_subject = ch1_subject
+            ch0_frames = ch1_frames
         else:
             raise ValueError("old_sys_return_ch must be 0 or 1")
     
@@ -87,7 +91,7 @@ def get_2D_data(subjs, tasks, data_path, normalized=True, mohsens_data=False, mo
         out_subject = np.array(ch0_subject) if old_sys_return_only == 0 else np.array(ch1_subject)
         return out_poses_2d, out_confidences, out_subject
     else:
-        return ch0_data, ch1_data, ch0_conf, ch1_conf 
+        return ch0_data, ch1_data, ch0_conf, ch1_conf, ch0_frames, ch1_frames
     
 
 def filter_ap_detections(ap_preds, ch):
@@ -189,7 +193,7 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
     if subj not in kpts_dict:
         kpts_dict[subj] = {}
     if task not in kpts_dict[subj]:
-        kpts_dict[subj][task] = {'pos': {}, 'conf': {}}
+        kpts_dict[subj][task] = {'pos': {}, 'conf': {}, 'idx': {}}
     
     # Get kpts from channels
     kpts = []
@@ -231,6 +235,9 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
 
         print("TASK TIME FILTERED: kpt1.shape: {} kpt2.shape: {}".format(kpts_1.shape, kpts_2.shape))
     
+    # Get frame idx for each pred, for timestamping
+    kpts_1_idx = np.arange(kpts_1.shape[0])
+    kpts_2_idx = np.arange(kpts_2.shape[0])
 
     # Remove frames with 0 pose on channels
     if cam_ver == 'new':
@@ -243,6 +250,8 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
     
     kpts_1 = kpts_1[pose_exists_1]
     kpts_2 = kpts_2[pose_exists_2]
+    kpts_1_idx = kpts_1_idx[pose_exists_1]
+    kpts_2_idx = kpts_2_idx[pose_exists_2]
 
     # TEMP: if no poses found, insert a single all-0 pose (specifically, TUG task S21 vid is too short)
     if (kpts_1.shape[0] == 0):
@@ -262,6 +271,8 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
     kpts_dict[subj][task]['pos'][1] = kpts_2[:, :, :2] 
     kpts_dict[subj][task]['conf'][0] = kpts_1[:, :, 2:]
     kpts_dict[subj][task]['conf'][1] = kpts_2[:, :, 2:]
+    kpts_dict[subj][task]['idx'][0] = kpts_1_idx
+    kpts_dict[subj][task]['idx'][1] = kpts_2_idx
 
     return kpts_dict    
 
@@ -299,7 +310,7 @@ class body_ts_loader():
                     for jj in range(3):
                         data_normal[:,ii,jj] = savgol_filter(data_normal[:,ii,jj], 11, 3)   # Smoothing
 
-            # Find Rot matrix of pose
+            # Make poses relative to the first pose
             if zero_rot:
                 Rhip_idx = info.PD_3D_lifter_skeleton['RL'][1]
                 Lhip_idx = info.PD_3D_lifter_skeleton['LL'][1]
@@ -313,9 +324,10 @@ class body_ts_loader():
                 z_vec = np.cross(x_vec, y_vec)
 
                 rotation_matrix = np.ones((len(x_vec), 3, 3))
-                rotation_matrix[:,:,0] = x_vec
-                rotation_matrix[:,:,1] = y_vec
-                rotation_matrix[:,:,2] = z_vec
+                # Only use first pose
+                rotation_matrix[:,:,0] = np.repeat(x_vec[0].reshape((-1,3)), len(x_vec), axis=0) # x_vec
+                rotation_matrix[:,:,1] = np.repeat(y_vec[0].reshape((-1,3)), len(y_vec), axis=0) # y_vec
+                rotation_matrix[:,:,2] = np.repeat(z_vec[0].reshape((-1,3)), len(z_vec), axis=0) # z_vec
 
                 data_normal = np.matmul(data_normal, rotation_matrix)
 

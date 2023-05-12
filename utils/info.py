@@ -106,3 +106,12 @@ PD_3D_lifter_skeleton = {
         'RL': [0, 4, 5, 6],    # R Leg:  Hip, RHip, RKnee, RAnkle
         'T': [8, 7, 0],        # Torso:  Head, Neck, Hip
 }
+
+# Nice dictionary for accessing idxs of the 3D pose kpts
+PD_3D_skeleton_kpt_idxs = {
+        'LA': {'Neck': 7, 'LShoulder': 12, 'LElbow': 13, 'LWrist': 14},
+        'RA': {'Neck': 7, 'RShoulder': 9, 'RElbow': 10, 'RWrist': 11},
+        'LL': {'Hip': 0, 'LHip': 1, 'LKnee': 2, 'LAnkle': 3},
+        'RL': {'Hip': 0, 'RHip': 4, 'RKnee': 5, 'RAnkle': 6},
+        'T': {'Head': 8, 'Neck': 7, 'Hip': 0},
+}

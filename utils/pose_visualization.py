@@ -223,9 +223,12 @@ def visualize_multi_view_pose(kpts_3D=None, kpts_2D=None,
     ax = fig.add_subplot(spec[1:, :], projection='3d')
     plot_3D_skeleton(kpts_3D, ax, plt_scatter=True)
     ax.set_title('Lifted 3D Pose')
-    ax.view_init(elev=30., azim=125) 
-    ax.set_xlim(0.6, -0.6)
-    ax.set_ylim(-0.7, 0.7)
+    ax.view_init(elev=25., azim=110)
+    # ax.set_xlim(0.6, -0.6)
+    # ax.set_ylim(-0.7, 0.7)
+    # ax.set_zlim(-0.75, 0.75)
+    ax.set_xlim(0.75, -0.75)
+    ax.set_ylim(-0.75, 0.75)
     ax.set_zlim(-0.75, 0.75)
 
     # Show/Save the figure
