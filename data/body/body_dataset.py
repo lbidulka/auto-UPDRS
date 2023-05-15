@@ -94,15 +94,21 @@ def get_2D_data(subjs, tasks, data_path, normalized=True, mohsens_data=False, mo
         return ch0_data, ch1_data, ch0_conf, ch1_conf, ch0_frames, ch1_frames
     
 
-def filter_ap_detections(ap_preds, ch):
+def filter_ap_detections(ap_preds, ch, subj):
     '''
     My re-adaptation of Mohsens function to process alphapose pred json files
 
     args:
         data: the alphapose output json file loaded in as a dictionary (ex: data1 = json.load(f))
         ch: the channel of the camera (1, 2, 3, 4, 5, 6, 7, 8)
+        subj: subject ID
     '''
     bbx_filters = alphapose_filtering.AP_bbx_filters[ch]
+
+    # Exceptions
+    if cam_sys_info.cam_ver[subj] == 'old':
+        if ch == '006':
+            bbx_filters['x_max'] = None # Evaluator is not in frame for these (though I havnt check every single one...)
 
     # regroup detections to be per-frame 
     frame_names = list(set([ap_preds[i]["image_id"] for i in range(len(ap_preds))]))
@@ -211,7 +217,7 @@ def filter_alphapose_results(data_path, subj, task, chs, kpts_dict=None, overwri
         # print("Loading {}".format(ap_preds_json))
         with open(ap_preds_json) as f:
             ap_results = json.load(f)
-            kpts.append(filter_ap_detections(ap_results, ch))
+            kpts.append(filter_ap_detections(ap_results, ch, subj))
     print("")
 
     kpts_1 = kpts[0]
@@ -281,7 +287,7 @@ class body_ts_loader():
     '''
     For loading the extracted 3D body keypoints from the UPDRS dataset
     '''
-    def __init__(self, ts_path, task, subjects=info.subjects_All, pickled=False, proc_aligned=True,
+    def __init__(self, ts_path, in_2d_path, task, subjects=info.subjects_All, pickled=False, proc_aligned=True,
                 smoothing=True, zero_rot=True,  # normalization options
                 ) -> None:
         '''
@@ -289,7 +295,9 @@ class body_ts_loader():
             pickled: if False, loads the individual numpy files (Mohsens style), else loads the pickled dictionary (my style)
             task: the UPDRS task to load    # TODO: ADD SUPPORT FOR MULTIPLE TASKS
         '''
+        self.task = task
         self.subjects = subjects
+        self.in_2d_path = in_2d_path
         self.ts_path = ts_path
         self.feat_names = info.clinical_gait_feat_names
 
