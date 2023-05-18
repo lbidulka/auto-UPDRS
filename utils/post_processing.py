@@ -5,16 +5,22 @@ from data.body.body_dataset import body_ts_loader
 import matplotlib.pyplot as plt
 
 
+def _moving_average(a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        # return np.concatenate([a[:n-1], ret[n - 1:] / n])
+        return ret[n - 1:] / n
+
 def get_T_thigh_angle(pred_3d):
     '''
     Computes the angle between the T Neck->Hip vector and the avg of the LL and RL Hip->LKnee vectors
     '''
     # get LL and RL Hip->LKnee vectors
-    LL_hip_knee = pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['LL']['LKnee']] - pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['LL']['Hip']]
-    RL_hip_knee = pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['RL']['RKnee']] - pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['RL']['Hip']]
+    LL_hip_knee = pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['LKnee']] - pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['Hip']]
+    RL_hip_knee = pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['RKnee']] - pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['Hip']]
 
     # get T Neck->Hip vector
-    T_neck_hip = pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['T']['Neck']] - pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['T']['Hip']]
+    T_neck_hip = pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['Neck']] - pred_3d[:, :, info.PD_3D_skeleton_kpt_idxs['Hip']]
 
     # avg LL and RL Hip->LKnee vectors, and get angle between that and T Neck->Hip vector
     LL_RL_hip_knee = (LL_hip_knee + RL_hip_knee) / 2
@@ -24,27 +30,46 @@ def get_T_thigh_angle(pred_3d):
 
     return T_to_thigh_angle
 
-def classify_tug(pose_3d, n=10, ang_walk_thresh=2.7):
+def get_d_T_thigh_angle(ang, n=20):
+    '''
+    compute discrete derivative of T_to_thigh_angle
+    '''
+    T_to_thigh_angle_diff = np.diff(ang)
+    return _moving_average(T_to_thigh_angle_diff, n=n)
+
+def classify_tug(pose_3d, n=20, ang_walk_thresh=2.7):
     '''
     Classifies each of the 3D timeseries frames as 
-        0: 'sit'
-        1: 'walk'
-    using the Torso-to-thigh angle
-    '''
-    def _moving_average(a, n=3):
-        ret = np.cumsum(a, dtype=float)
-        ret[n:] = ret[n:] - ret[:-n]
-        return ret[n - 1:] / n
-    
-    # Get angle and smooth
-    T_to_thigh_angle = get_T_thigh_angle(pose_3d)
-    T_to_thigh_angle_smoothed = _moving_average(T_to_thigh_angle, n=n)
-    # threshold the angle to classify actions
-    action = T_to_thigh_angle_smoothed > ang_walk_thresh
-    action = action.astype(int)
-    action = np.concatenate((np.zeros(n-1), action))
+        -1: 'sitting'
+         0: 'transitioning'
+         1: 'walking'
+    using the Torso-to-thigh angle.
 
-    return action.astype(bool)
+    NB: Assumes the subject always starts in a sitting position
+    '''
+    # Get angle and d_ang
+    T_to_thigh_angle = get_T_thigh_angle(pose_3d)
+    T_to_thigh_angle_diff = get_d_T_thigh_angle(T_to_thigh_angle, n=n)
+
+    # Threshold the absolute d_ang to get transition sections, conv smooths it out
+    transition = np.convolve(np.abs(T_to_thigh_angle_diff), np.ones(int(n*1.5)), 'same') > 0.4
+
+    # initially in state -1 (sitting), in transition switch to state 0 (transitioning), then to invert state after transition
+    action = np.zeros(len(T_to_thigh_angle_diff))
+    state = -1
+    action[0] = state
+    for i in range(1, len(T_to_thigh_angle_diff)):
+        # transition is always 0
+        if transition[i]:
+                action[i] = 0
+        # transition is behind, but in front, we have changed from sitting or standing
+        elif transition[i-1] and (not transition[i]) and (not transition[i+1]):
+            state *= -1
+            action[i] = state
+        else:
+            action[i] = state
+
+    return np.concatenate((np.ones(n)*-1, action.astype(int))), np.concatenate((np.zeros(n), transition.astype(int)))
 
 
 class gait_processor():
@@ -60,8 +85,7 @@ class gait_processor():
         # TODO: just compute ts always, and then avg the ts data to get the avg data
         self.feats_avg = self.compute_features(self.subjects, ts=False)
         self.feats_ts = self.compute_features(self.subjects, ts=True)
-        self.thresholds = self._set_thresholds()
-    
+        self.thresholds = None
     
     def plot_feats_ts(self, show=True, save_fig=True, outpath=None):
         '''
@@ -82,13 +106,15 @@ class gait_processor():
         fig.set_size_inches(18.5, 10.5)
         # plot
         for ii in range(len(info.clinical_gait_feat_names)): # 10):
-            for jj in range(0, 3): #range(len(self.subjects)):
-                ax[ii//fig_cols, ii%fig_cols].plot(self.feats_ts[ii][jj], linewidth=1, alpha=0.5, 
-                                                   label=self.subjects[jj] if ii==0 else None)
+            # for jj in [19, 25, 26]:  # enumerate(self.subjects):
+            for jj, S_id in enumerate([0, 27, 29]):
+                feat = self.feats_ts[ii][jj]
+                label = S_id if ii==0 else None
+                ax[ii//fig_cols, ii%fig_cols].plot(feat, linewidth=1.5, alpha=0.5, label=label)
             ax[ii//fig_cols, ii%fig_cols].set_title(info.clinical_gait_feat_names[ii])
             ax[ii//fig_cols, ii%fig_cols].set_xlabel('pose idx')
 
-            ax[ii//fig_cols, ii%fig_cols].set_xlim([0, 225])
+            ax[ii//fig_cols, ii%fig_cols].set_xlim([0, 200])
 
         fig.legend(loc='right', bbox_to_anchor=(1, 0.5))
         if save_fig: plt.savefig(outpath, dpi=500)
@@ -192,8 +218,8 @@ class gait_processor():
     #
     #   gait_speed: x > max   # TODO: CHECK IF THIS IS ACTUALLY USED???
     #
-    def _set_thresholds(self):
-        control_feats = self.compute_features(info.healthy_controls, ts=False)
+    def set_thresholds(self, subjs=info.healthy_controls, filter='moving_avg'):
+        control_feats = self.compute_features(subjs, ts=False, filter=filter)
         # Handle most of them
         thresholds_min = np.ones(len(info.clinical_gait_feat_names)) * -np.inf
         thresholds_max = np.amin(control_feats[:15], axis=1) # Dont include gait speed and gait speed var.
@@ -205,15 +231,17 @@ class gait_processor():
         # Arm swing symmetry
         thresholds_min[14] = np.amin(control_feats[14])    # TODO: FIX LOGIC, REVERSE THE MIN AND MAX?
         thresholds_max[14] = np.amax(control_feats[14])    
+
+        self.thresholds = np.vstack([thresholds_min, thresholds_max])
         return np.vstack([thresholds_min, thresholds_max])
     
-    def compute_features(self, subjects, ts = False):
+    def compute_features(self, subjects, ts=False, filter='moving_avg'):
         if ts:
-            step_widths = self._step_width(subjects, ts)
+            step_widths = self._step_width(subjects, ts, filter=filter)
             step_lengths = self._step_lengths(subjects, ts)
             cadences_gaitspeeds_gaitspeedvars = self._cadence_gaitspeed_gaitspeedvar(subjects, ts)
-            foot_lifts = self._foot_lifts(subjects, ts)
-            arm_swings = self._arm_swings(subjects, ts)
+            foot_lifts = self._foot_lifts(subjects, ts, filter=filter)
+            arm_swings = self._arm_swings(subjects, ts, filter=filter)
             hip_flexions = self._hip_flexions(subjects, ts)
             knee_flexions = self._knee_flexions(subjects, ts)
             trunk_rots = self._trunk_rots(subjects, ts)
@@ -237,11 +265,11 @@ class gait_processor():
                 [cadences[1] for cadences in cadences_gaitspeeds_gaitspeedvars], # Gait Speed
             ]
         
-        step_widths = np.array(self._step_width(subjects, ts))
+        step_widths = np.array(self._step_width(subjects, ts, filter=filter))
         step_lengths = np.array(self._step_lengths(subjects, ts))
         cadences_gaitspeeds_gaitspeedvars = np.array(self._cadence_gaitspeed_gaitspeedvar(subjects, ts))
-        foot_lifts = np.array(self._foot_lifts(subjects, ts))
-        arm_swings = np.array(self._arm_swings(subjects, ts))
+        foot_lifts = np.array(self._foot_lifts(subjects, ts, filter=filter))
+        arm_swings = np.array(self._arm_swings(subjects, ts, filter=filter))
         hip_flexions = np.array(self._hip_flexions(subjects, ts))
         knee_flexions = np.array(self._knee_flexions(subjects, ts))
         trunk_rots = np.array(self._trunk_rots(subjects, ts))
@@ -378,15 +406,14 @@ class gait_processor():
         foot_lifts = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            foot_height_r = data_norm[:,6,1] - data_norm[:,4,1]
-            foot_height_l = data_norm[:,3,1] - data_norm[:,1,1]
-            bone_length_l = np.linalg.norm((data_norm[:,1] - data_norm[:,2]), axis=-1)
-            bone_length_r = np.linalg.norm((data_norm[:,5] - data_norm[:,4]), axis=-1)
-            foot_height_r /= bone_length_r
-            foot_height_l /= bone_length_l
+            foot_height_r = data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle'],1] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip'],1]
+            foot_height_l = data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle'],1] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip'],1]
+            bone_length_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee']]), axis=-1)
+            bone_length_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']]), axis=-1)
+            # foot_height_r /= bone_length_r
+            # foot_height_l /= bone_length_l
             A=[]
             B=[]
-            # TODO: DISSECT THIS COMPUTATION, THE MIN SHIFTS AS TIME GOES ON?
             for ii in range(30,len(foot_height_r)):
                 A.append(np.max(foot_height_r[ii-30:ii]) - np.min(foot_height_r[ii-30:ii]))
                 B.append(np.max(foot_height_l[ii-30:ii]) - np.min(foot_height_l[ii-30:ii]))
@@ -400,11 +427,11 @@ class gait_processor():
         arm_swings = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            bone_length = np.linalg.norm((data_norm[:,4] - data_norm[:,1]), axis=-1)
-            dist_R = np.linalg.norm((data_norm[:,14] - data_norm[:,4]), axis=-1)
-            dist_L = np.linalg.norm((data_norm[:,11] - data_norm[:,1]), axis=-1)
-            dist_R /= bone_length
-            dist_L /= bone_length
+            bone_length = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']]), axis=-1)
+            dist_R = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LWrist']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']]), axis=-1)
+            dist_L = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RWrist']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']]), axis=-1)
+            # dist_R /= bone_length
+            # dist_L /= bone_length
             dist_R = self._filter_1d(dist_R, filter)
             dist_L = self._filter_1d(dist_L, filter)
             arm_swings.append([dist_R, dist_L, dist_L / dist_R] if ts else
