@@ -29,13 +29,17 @@ subjects_All_date = ['20210223','20191114','20191120','20191112','20191119',
 subjects_new_sys = ['S01', 'S28', 'S29', 'S31']
 new_sys_vid_suffixes = {
     'S01': {'free_form_oval': '20210223144018_20210223144243', # 'free_form_oval': '20210223144019_20210223144243',
-            'tug_stand_walk_sit': '20210223145241_20210223145331'},
+            'tug_stand_walk_sit': '20210223145241_20210223145331',
+            'arising_chair': '20210223145859_20210223145934'},
     'S28': {'free_form_oval': '20210706134648_20210706134920',
-            'tug_stand_walk_sit': '20210706135744_20210706135801'},
+            'tug_stand_walk_sit': '20210706135743_20210706135801',
+            'arising_chair': '20210706140005_20210706140028'},
     'S29': {'free_form_oval': '20210804172455_20210804172705',
-            'tug_stand_walk_sit': '20210804173404_20210804173419'},
+            'tug_stand_walk_sit': '20210804173404_20210804173419',
+            'arising_chair': '20210804173611_20210804173633'},
     'S31': {'free_form_oval': '20210811135008_20210811135233',
-            'tug_stand_walk_sit': '20210811140141_20210811140219'},
+            'tug_stand_walk_sit': '20210811140141_20210811140219',
+            'arising_chair': '20210811140426_20210811140459'},
 }
 
 # Subject ID mapping
@@ -108,10 +112,19 @@ PD_3D_lifter_skeleton = {
 }
 
 # Nice dictionary for accessing idxs of the 3D pose kpts
+# PD_3D_skeleton_kpt_idxs = {
+#         'LA': {'Neck': 7, 'LShoulder': 12, 'LElbow': 13, 'LWrist': 14},
+#         'RA': {'Neck': 7, 'RShoulder': 9, 'RElbow': 10, 'RWrist': 11},
+#         'LL': {'Hip': 0, 'LHip': 1, 'LKnee': 2, 'LAnkle': 3},
+#         'RL': {'Hip': 0, 'RHip': 4, 'RKnee': 5, 'RAnkle': 6},
+#         'T': {'Head': 8, 'Neck': 7, 'Hip': 0},
+# }
 PD_3D_skeleton_kpt_idxs = {
-        'LA': {'Neck': 7, 'LShoulder': 12, 'LElbow': 13, 'LWrist': 14},
-        'RA': {'Neck': 7, 'RShoulder': 9, 'RElbow': 10, 'RWrist': 11},
-        'LL': {'Hip': 0, 'LHip': 1, 'LKnee': 2, 'LAnkle': 3},
-        'RL': {'Hip': 0, 'RHip': 4, 'RKnee': 5, 'RAnkle': 6},
-        'T': {'Head': 8, 'Neck': 7, 'Hip': 0},
+        'Head': 8, 
+        'Neck': 7, 
+        'LShoulder': 12, 'LElbow': 13, 'LWrist': 14,
+        'RShoulder': 9, 'RElbow': 10, 'RWrist': 11,
+        'Hip': 0, 
+        'LHip': 1, 'LKnee': 2, 'LAnkle': 3,
+        'RHip': 4, 'RKnee': 5, 'RAnkle': 6,
 }

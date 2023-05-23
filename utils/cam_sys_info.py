@@ -23,3 +23,7 @@ cam_ver = {
         'S26': 'old', 'S27': 'old', 'S28': 'new', 'S29': 'new', 'S30': 'old',
         'S31': 'new', 'S32': 'old', 'S33': 'old', 'S34': 'old', 'S35': 'old',
 }
+
+# fps
+new_sys_fps = 30
+old_sys_fps = 15

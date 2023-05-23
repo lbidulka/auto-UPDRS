@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
-from utils import info
+from utils import info, cam_sys_info
 from data.body.body_dataset import body_ts_loader
 import matplotlib.pyplot as plt
 
@@ -11,7 +11,45 @@ def _moving_average(a, n=3):
         # return np.concatenate([a[:n-1], ret[n - 1:] / n])
         return ret[n - 1:] / n
 
-def get_T_thigh_angle(pred_3d):
+def get_TUG_time_to_complete(S_id, action_class, in_frames):
+    '''
+    Computes the time to complete the TUG test and the length of the transition periods using the 
+    action classification timeseries.
+    '''
+    start, walk_start, walk_end, end = None, None, None, None
+    # iterate through action class, find transitions
+    for i in range(1, len(action_class)):
+        prev = action_class[i-1]
+        curr = action_class[i]
+        # sit -> transition
+        if prev == -1 and curr == 0:
+            start = in_frames[i]
+        # transition -> walki
+        elif prev == 0 and curr == 1:
+            walk_start = in_frames[i]
+        # walk -> transition
+        elif prev == 1 and curr == 0:
+            walk_end = in_frames[i]
+        # transition -> sit
+        elif (prev == 0 and curr == -1):
+            end = in_frames[i]
+
+    # TODO: BE SURE THIS WORKS FOR ALL
+    # if there was no final transition to sitting, then the end is the last frame
+    if end is None:
+        end = in_frames[-1]
+
+    print("\nstart: ", start, ", walk_start: ", walk_start, ", walk_end: ", walk_end, ", end: ", end)
+
+    fps = cam_sys_info.new_sys_fps if S_id in info.subjects_new_sys else cam_sys_info.old_sys_fps
+
+    time_to_complete = round((end - start) / fps, 2)
+    rise_time = round((walk_start - start) / fps, 2)
+    sit_time = round((end - walk_end) / fps, 2)
+    
+    return time_to_complete, rise_time, sit_time
+
+def get_T_thigh_angle(pred_3d, n=None):
     '''
     Computes the angle between the T Neck->Hip vector and the avg of the LL and RL Hip->LKnee vectors
     '''
@@ -28,16 +66,19 @@ def get_T_thigh_angle(pred_3d):
     T_neck_hip = T_neck_hip / np.linalg.norm(T_neck_hip, axis=1, keepdims=True)
     T_to_thigh_angle = np.arccos(np.sum(LL_RL_hip_knee * T_neck_hip, axis=1))
 
+    if n != 0:
+        return _moving_average(T_to_thigh_angle, n=n)
+
     return T_to_thigh_angle
 
-def get_d_T_thigh_angle(ang, n=20):
+def get_d_T_thigh_angle(ang):
     '''
     compute discrete derivative of T_to_thigh_angle
     '''
-    T_to_thigh_angle_diff = np.diff(ang)
-    return _moving_average(T_to_thigh_angle_diff, n=n)
+    ang_diff = np.diff(ang)
+    return np.concatenate([[0], ang_diff])
 
-def classify_tug(pose_3d, n=20, ang_walk_thresh=2.7):
+def classify_tug(T_to_thigh_angle, n=20, diff_thresh=0.022):
     '''
     Classifies each of the 3D timeseries frames as 
         -1: 'sitting'
@@ -48,28 +89,41 @@ def classify_tug(pose_3d, n=20, ang_walk_thresh=2.7):
     NB: Assumes the subject always starts in a sitting position
     '''
     # Get angle and d_ang
-    T_to_thigh_angle = get_T_thigh_angle(pose_3d)
-    T_to_thigh_angle_diff = get_d_T_thigh_angle(T_to_thigh_angle, n=n)
+    T_to_thigh_angle_diff = get_d_T_thigh_angle(T_to_thigh_angle)
 
     # Threshold the absolute d_ang to get transition sections, conv smooths it out
-    transition = np.convolve(np.abs(T_to_thigh_angle_diff), np.ones(int(n*1.5)), 'same') > 0.4
+    transition_n = np.int(n*1)
+    transition_abs = np.convolve(np.abs(T_to_thigh_angle_diff), np.ones(transition_n) / transition_n, 'same')
+    transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
+    transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
+    transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
+    # transition_abs = np.concatenate([np.zeros(transition_n-1), _moving_average(np.abs(T_to_thigh_angle_diff), n=transition_n)])
+    # transition_abs = np.abs(T_to_thigh_angle_diff)
+    transition = transition_abs > diff_thresh
 
     # initially in state -1 (sitting), in transition switch to state 0 (transitioning), then to invert state after transition
     action = np.zeros(len(T_to_thigh_angle_diff))
     state = -1
     action[0] = state
-    for i in range(1, len(T_to_thigh_angle_diff)):
+    for i in range(1, len(T_to_thigh_angle_diff)-1):
+        prev = transition[i-1]
+        curr = transition[i]
+        next = transition[i+1]
         # transition is always 0
         if transition[i]:
                 action[i] = 0
-        # transition is behind, but in front, we have changed from sitting or standing
-        elif transition[i-1] and (not transition[i]) and (not transition[i+1]):
+        # transition is behind, but not now or in front, we have changed from sitting or standing
+        elif prev and not curr and not next:
             state *= -1
             action[i] = state
         else:
             action[i] = state
+        
+        # TODO: WHAT TO DO FOR FINAL POINT? ALWAYS ASSUME RETURN TO SITTING?
+        action[-1] = -1
 
-    return np.concatenate((np.ones(n)*-1, action.astype(int))), np.concatenate((np.zeros(n), transition.astype(int)))
+    # return np.concatenate((np.ones(n)*-1, action.astype(int))) , np.concatenate((np.zeros(n), transition_abs))
+    return  action.astype(int), transition_abs
 
 
 class gait_processor():

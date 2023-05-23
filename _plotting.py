@@ -1,7 +1,8 @@
 import torch
 import cv2
 import argparse
-from utils import info, post_processing, helpers, pose_visualization, metrics, pose_utils
+from utils import info, post_processing, helpers, pose_visualization, metrics, pose_utils, cam_sys_info
+from feature_utils import sit_to_stand
 import numpy as np
 import data.body.body_dataset as body_dataset
 from data.body.body_dataset import body_ts_loader
@@ -52,56 +53,81 @@ def plot_thing(S_id, pred_3d, in_frames, out_fig_path):
     spec = fig.add_gridspec(1, 1)
     ax1 = fig.add_subplot(spec[0, 0])
     ax2 = ax1.twinx() 
+    ax3 = ax1.twinx() 
+
+
+
+    ang_smooth_n = 10
+    T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
+    T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
+    T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
+
+    ax1.plot(in_frames, sit_to_stand.get_elbow_angles(pred_3d), c='b', label='elb ang', linewidth=0.5)
+    ax1.plot(in_frames, sit_to_stand.get_hip_forearm_angle(pred_3d), c='y', label='fora-hip ang', linewidth=0.5)
+    ax2.plot(in_frames, sit_to_stand.get_hands_to_hip_dist(pred_3d), c='c', label='hand-hip dist', linewidth=0.5)
+
+    ax1.set_ylim([1.5, 1.75])
+    ax2.set_ylabel('dist')
+
 
     # Get angle and smooth, then plot
-    T_to_thigh_angle = post_processing.get_T_thigh_angle(pred_3d)
-    n = 10
+    # n = 10
+    n = 0
+    T_to_thigh_angle = post_processing.get_T_thigh_angle(pred_3d, n=n)
 
-    ax1.scatter(in_frames, T_to_thigh_angle, c='b', s=0.2, label='ang',)
-    ax1.set_title('{} Torso-Thigh angle'.format(S_id))
+    # ax1.scatter(in_frames[n-1:], T_to_thigh_angle, c='b', s=0.2, label='ang',)
+    # ax1.scatter(in_frames, T_to_thigh_angle, c='b', s=0.2, label='ang',)
+    # ax1.set_title('{} Torso-Thigh angle'.format(S_id))
+    ax1.set_title('{} feats'.format(S_id))
     ax1.set_xlabel('timestep (img frame idx)')
     ax1.set_ylabel('angle (rad)')
 
+    ax2.set_yticks([])
+    # ax2.set_yticks([-1, 0, 1])
+    # ax2.set_yticklabels(['sit', 'transition', 'walk'])
+    # ax2.set_ylabel('action class')
 
-    # # Get extrema, then plot
-    extrema_ord = 15
-    maxima_idx = argrelextrema(T_to_thigh_angle, np.greater, order=extrema_ord)
-    minima_idx = argrelextrema(T_to_thigh_angle, np.less, order=extrema_ord)
+    # ax3.set_ylim([-0.06, 0.06])
+    # ax3.set_ylabel('d_ang (rad/frame)')
 
-    maxima = T_to_thigh_angle[maxima_idx]
-    minima = T_to_thigh_angle[minima_idx]
+    # Smooth angle for further processing
+    ang_smooth_n = 10
+    T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
+    T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
+    T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
+    
 
-    # ax1.scatter(in_frames[n-1:][maxima_idx], maxima, c='g', s=10, label='max', marker='^')
-    # ax1.scatter(in_frames[n-1:][minima_idx], minima, c='m', s=10, label='min', marker='v')
-    ax1.scatter(in_frames[maxima_idx], maxima, c='g', s=10, label='max', marker='^')
-    ax1.scatter(in_frames[minima_idx], minima, c='m', s=10, label='min', marker='v')
-
-
-    # Get diffs btw maximas and minimas, then plot
-    # maxima_diff = np.diff(maxima)
-    # minima_diff = np.diff(minima)
-
-    # ax1.scatter(in_frames[n-1:][maxima_idx][1:], maxima_diff, c='c', s=10, label='d_max', marker='2')
-    # ax1.scatter(in_frames[n-1:][minima_idx][1:], minima_diff, c='r', s=10, label='d_min', marker='3')
-
-
-    # compute discrete derivative of T_to_thigh_angle
+    # discrete diff of T_to_thigh_angle
     diff_smooth_n = 15
-    T_to_thigh_angle_diff = post_processing.get_d_T_thigh_angle(T_to_thigh_angle, n=diff_smooth_n)
+    T_to_thigh_angle_diff = post_processing.get_d_T_thigh_angle(T_to_thigh_angle)
 
-    ax2.scatter(in_frames[diff_smooth_n:], T_to_thigh_angle_diff, c='c', s=0.2, label='d_ang',)
-    # ax2.scatter(in_frames, T_to_thigh_angle_diff, c='c', s=0.2, label='d_ang',)
+
+    # ax3.scatter(in_frames, T_to_thigh_angle_diff, c='c', s=0.1, label='d_ang',)
 
     # Get and plot action class
-    action_class, abs_transition = post_processing.classify_tug(pred_3d, n=diff_smooth_n)
+    action_class, abs_transition = post_processing.classify_tug(T_to_thigh_angle, n=diff_smooth_n)
+    # action_class = post_processing.classify_tug(pred_3d, n=diff_smooth_n)
+
+    # Get timing features: time_to_complete, rise_time, and sit_time
+    # time_to_complete, rise_time, sit_time = post_processing.get_TUG_time_to_complete(S_id, action_class, in_frames[n-1:])
+    # time_to_complete, rise_time, sit_time = post_processing.get_TUG_time_to_complete(S_id, action_class, in_frames)
+
+    # print("\n--- Subject: {} ---".format(S_id))
+    # print("time to complete: {} sec".format(time_to_complete))
+    # print("rise time: {} sec, sit_time: {} sec".format(rise_time, sit_time))
+
+
+    # ax2.scatter(in_frames[n:], action_class, c='r', s=0.2, label='action',)
+    # ax3.scatter(in_frames[n:], abs_transition, c='y', s=0.2, label='abs/filt d_ang')
 
     ax2.scatter(in_frames, action_class, c='r', s=0.2, label='action',)
-    ax2.scatter(in_frames, abs_transition, c='y', s=0.2,)
+    # ax3.scatter(in_frames, abs_transition, c='y', s=0.2, label='abs/filt d_ang')
 
     # Legend and show
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
-    ax1.legend(h1+h2, l1+l2)
+    h3, l3 = ax3.get_legend_handles_labels()
+    ax1.legend(h1+h2+h3, l1+l2+l3)
 
     plt.savefig(out_fig_path, dpi=500, bbox_inches='tight')
     plt.close(fig)
@@ -160,14 +186,14 @@ def naive_voting(gait_processor, subjs):
 # Full body tracking tasks (e.g. gait analysis)
 def body_tasks():
 
-    task = 'tug_stand_walk_sit'
+    # task = 'tug_stand_walk_sit'
     # task = 'free_form_oval'
-    # task = 'arising_chair'
+    task = 'arising_chair'
     chs = ['002', '006']
     inf_ch_idx = 1
 
-    subjs = [subj for subj in info.subjects_All if subj not in ['S21']] # TUG S21 is too short
-    # subjs = info.subjects_new_sys
+    # subjs = [subj for subj in info.subjects_All if subj not in ['S21']] # TUG S21 is too short
+    subjs = info.subjects_new_sys
 
     dataset_path = './auto_UPDRS/data/body/'
     body_2d_kpts_path = "{}2d_proposals/all_tasks_2D_kpts.pickle".format(dataset_path,)
@@ -186,7 +212,8 @@ def body_tasks():
     # naive_voting(feature_processor, subjs)
 
     # Single Subj plotting
-    for S_id in ['S16']:
+    for S_id in ['S01']:
+    # for S_id in ['S33']:
     # for S_id in [subj for subj in info.subjects_All if subj not in ['S21']]:
         # load 3d pickle
         # with open(body_3d_preds_path, 'rb') as f:
@@ -200,7 +227,7 @@ def body_tasks():
         # plot torso-thing angle for timing
         plot_thing(S_id, pred_3d_kpts, (ch1_frames if inf_ch_idx else ch0_frames), out_fig_path="./auto_UPDRS/outputs/pose.png")
 
-        time.sleep(1)
+        time.sleep(2)
 
         # plot pred poses
         # for i in tqdm(range(225, ch0_2d_kpts.shape[0])):
