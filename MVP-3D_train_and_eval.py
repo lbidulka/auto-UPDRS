@@ -13,7 +13,7 @@ import pickle
 from tqdm import tqdm
 
 from data.body.body_dataset import PD_AP_Dataset, get_2D_data
-from utils.pose_utils import procrustes_torch, reshape_and_align
+from utils.pose_utils import procrustes_torch, reshape_and_align, flip_2D_data
 from utils.helpers import print_losses
 from utils import metrics
 from utils.metrics import loss_weighted_rep_no_scale
@@ -27,19 +27,22 @@ def get_config():
     # --------------------------------------------------
     config.save_ckpts = True
 
-    # Tasks
+    # Tasks & CHs
     # --------------------------------------------------
-    # config.updrs_tasks = 'free_form_oval'
-    # config.updrs_tasks = 'tug_stand_walk_sit'
-    config.updrs_tasks = ['tug_stand_walk_sit', 'free_form_oval']
+    # free_form_oval, tug_stand_walk_sit, arising_chair
+    # config.updrs_tasks = ['free_form_oval',]  
+    config.updrs_tasks = ['free_form_oval', 'tug_stand_walk_sit',]
+    # config.updrs_tasks = ['free_form_oval', 'tug_stand_walk_sit', 'arising_chair']
 
-    # config.tasks = ['train']
-    config.tasks = ['inference']
-    # config.tasks = ['train', 'inference']
+    config.tasks = ['inference']    # train, val, inference
+    config.tasks = ['train', 'inference']
     # config.tasks = ['train', 'val', 'inference']
 
-    config.chs = ["002", "006"]
-    config.inf_ch_idx = 1
+    # 001, 002, 003, 004, 005, 006, 007, 008
+    config.chs = ["001", "002"]
+
+    config.inf_ch_idx = 0
+
     config.inference_ch = 'cam1' if config.inf_ch_idx else 'cam0'  # Only one channel is used to produce the outputs #TODO: MAKE THIS MORE FLEXIBLE
 
     # Training
@@ -47,18 +50,20 @@ def get_config():
     config.train_subjs = info.subjects_new_sys
     # config.train_subjs = ['S01', 'S28', 'S29',]
 
+    # Val/Inference
+    # --------------------------------------------------
     # config.val_subjs = ['S31']
-
-    # config.inference_subjs = info.subjects_new_sys
-    config.inference_subjs = [subj for subj in info.subjects_All if subj not in ['S21']]
+    config.inference_subjs = info.subjects_new_sys
+    # config.inference_subjs = [subj for subj in info.subjects_All if subj not in ['S21']]
     # config.inference_subjs = info.subjects_All
 
     # Hyperparams
-    config.learning_rate = 0.0001
+    # --------------------------------------------------
+    config.learning_rate = 0.0005
     config.weight_decay = 1e-5
-    config.train_bs = 16
+    config.train_bs = 32
     config.eval_bs = 4096
-    config.N_epochs = 4
+    config.N_epochs = 15
 
     # loss weights
     config.weight_rep = 1
@@ -70,23 +75,21 @@ def get_config():
     # --------------------------------------------------
     config.root_path = 'auto_UPDRS/'
     config.data_path = config.root_path + 'data/body/2d_proposals/'
-    # config.datafile = config.data_path + config.updrs_tasks + '_2D_kpts.pickle'
-    # config.datafile = "{}{}_CH{}_CH{}_2D_kpts.pickle".format(config.data_path, config.updrs_tasks, config.chs[0], config.chs[1])
     config.datafile = "{}all_tasks_2D_kpts.pickle".format(config.data_path,)
 
     config.lifter_ckpt_path = config.root_path + 'model_checkpoints/body_pose/PD/' + 'all_tasks_3D_lifter.pt'
-    # config.lifter_ckpt_path = config.root_path + 'model_checkpoints/body_pose/PD/' + '{}_3D_lifter.pt'.format(config.updrs_tasks)
-    # config.teacher_ckpt_path = config.root_path + 'model_checkpoints/body_pose/' + 'model_lifter_ap2d_ap3d.pt'
     config.teacher_ckpt_path = config.root_path + 'model_checkpoints/body_pose/Mohsens/' + 'model_pretrain.pt'
 
+    # DEBUG: TO USE TEACHER MODEL AS LIFTER
+    # config.lifter_ckpt_path = config.teacher_ckpt_path
+
     config.inference_out_path = '{}data/body/3d_time_series/all_tasks_CH{}.pickle'.format(config.root_path, config.chs[config.inf_ch_idx],)
-    # config.inference_out_path = '{}data/body/3d_time_series/CH{}_{}.pickle'.format(config.root_path, config.chs[inf_ch_idx], 
-    #                                                                         config.updrs_tasks,)
     
     # Data format
     # --------------------------------------------------
     config.num_kpts = 15
     config.all_cams = ['cam0', 'cam1']  # TODO: MAP THIS TO CHANNELS
+    # config.all_cams = ['cam0', 'cam1', 'cam2'] 
 
     print_useful_configs(config)
     return config
@@ -335,24 +338,23 @@ def inference(config):
         for subj in tqdm(config.inference_subjs):
             preds[subj] = {}
             for task in config.updrs_tasks:
-                poses_2d_inference, confs_2d_inference, out_subject_inference = get_2D_data([subj], [task], 
-                                                                config.datafile, old_sys_return_only=config.inf_ch_idx,
-                                                                normalized=True, mohsens_output=True)
-                inference_set = PD_AP_Dataset(poses_2d_inference, confs_2d_inference, out_subject_inference)
+                data_2d = get_2D_data([subj], [task], config.datafile, 
+                                      old_sys_return_only=config.inf_ch_idx, 
+                                      normalized=True, mohsens_output=False)
+                poses_2d_inference, confs_2d_inference, out_subject_inference, out_frames = data_2d
+                inference_set = PD_AP_Dataset(poses_2d_inference, confs_2d_inference, out_subject_inference, out_frames)
                 inference_loader = data.DataLoader(inference_set, batch_size=config.eval_bs, shuffle=False, num_workers=0)
                 
-                preds[subj][task] = {'in_2d': [], 'in_confs': [], 'raw_3d_preds': [], 'aligned_3d_preds': [], 'pred_rots': []}
+                preds[subj][task] = {'in_2d': [], 'in_confs': [], 'frame_idxs': [], 'raw_3d_preds': [], 'aligned_3d_preds': [], 'pred_rots': []}
                 for i, sample in enumerate(inference_loader):
                     poses_2d = {key:sample[key] for key in config.all_cams}
                     inp_poses_2d = torch.zeros((poses_2d[config.inference_ch].shape[0], config.num_kpts*2)).cuda()
                     inp_confs_2d = torch.zeros((poses_2d[config.inference_ch].shape[0], config.num_kpts)).cuda()
 
-                    # poses_2d is a dictionary. It needs to be reshaped to be propagated through the model.
-                    cnt = 0
-                    for b in range(poses_2d[config.inference_ch].shape[0]):
-                        inp_poses_2d[cnt] = poses_2d[config.inference_ch][b]
-                        inp_confs_2d[cnt] = sample['confidences'][0][b]
-                        cnt += 1
+                    frame_idxs = sample['frame_idxs']
+                    inp_poses_2d = poses_2d[config.inference_ch].cuda()
+                    inp_confs_2d = sample['confidences'][config.inf_ch_idx].cuda()
+                    frame_idxs = sample['frame_idxs'][config.inf_ch_idx].cuda()
                     
                     # forward pass
                     pred_poses, pred_cam_angles = model(inp_poses_2d, inp_confs_2d)
@@ -361,6 +363,7 @@ def inference(config):
                     # Save
                     preds[subj][task]['in_2d'].append(inp_poses_2d.detach().cpu().numpy())
                     preds[subj][task]['in_confs'].append(inp_confs_2d.detach().cpu().numpy())
+                    preds[subj][task]['frame_idxs'].append(frame_idxs.detach().cpu().numpy())
                     preds[subj][task]['raw_3d_preds'].append(pred_poses.reshape(-1, 3, config.num_kpts).transpose(2, 1).detach().cpu().numpy())
                     
                     pred_poses_aligned = pred_poses.reshape(-1, 3, config.num_kpts).detach().transpose(2, 1)

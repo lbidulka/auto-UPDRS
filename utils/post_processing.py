@@ -1,8 +1,10 @@
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
-from utils import info, cam_sys_info
+from utils import info, cam_sys_info, alphapose_filtering
 from data.body.body_dataset import body_ts_loader
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+import copy
 
 
 def _moving_average(a, n=3):
@@ -49,7 +51,7 @@ def get_TUG_time_to_complete(S_id, action_class, in_frames):
     
     return time_to_complete, rise_time, sit_time
 
-def get_T_thigh_angle(pred_3d, n=None):
+def get_T_thigh_angle(pred_3d, n=0):
     '''
     Computes the angle between the T Neck->Hip vector and the avg of the LL and RL Hip->LKnee vectors
     '''
@@ -77,8 +79,10 @@ def get_d_T_thigh_angle(ang):
     '''
     ang_diff = np.diff(ang)
     return np.concatenate([[0], ang_diff])
+    # return ang_diff
 
-def classify_tug(T_to_thigh_angle, n=20, diff_thresh=0.022):
+def classify_tug(T_to_thigh_angle, n=5, diff_thresh=0.015, avg_method=False):
+    # diff_thresh=0.025
     '''
     Classifies each of the 3D timeseries frames as 
         -1: 'sitting'
@@ -88,24 +92,34 @@ def classify_tug(T_to_thigh_angle, n=20, diff_thresh=0.022):
 
     NB: Assumes the subject always starts in a sitting position
     '''
-    # Get angle and d_ang
-    T_to_thigh_angle_diff = get_d_T_thigh_angle(T_to_thigh_angle)
+    angle = copy.deepcopy(T_to_thigh_angle)
 
-    # Threshold the absolute d_ang to get transition sections, conv smooths it out
-    transition_n = np.int(n*1)
-    transition_abs = np.convolve(np.abs(T_to_thigh_angle_diff), np.ones(transition_n) / transition_n, 'same')
-    transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
-    transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
-    transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
-    # transition_abs = np.concatenate([np.zeros(transition_n-1), _moving_average(np.abs(T_to_thigh_angle_diff), n=transition_n)])
-    # transition_abs = np.abs(T_to_thigh_angle_diff)
+    if avg_method:
+        # simpler, smooth the signal, then threshold
+        thresh = 2.5
+        avg_n = 5
+        transition_abs = np.convolve(angle, np.ones(avg_n) / avg_n, 'same')
+        for i in range(10):
+            transition_abs = np.convolve(transition_abs, np.ones(avg_n) / avg_n, 'same')
+    else:
+        for i in range(10):
+            angle = np.convolve(angle, np.ones(n) / n, 'same')
+            angle[:n] = angle[n:2*n]
+            angle[-n:] = angle[-2*n:-n]
+        T_to_thigh_angle_diff = get_d_T_thigh_angle(angle)
+        # Threshold the absolute d_ang to get transition sections, conv smooths it out
+        transition_n = np.int(n*1)
+        transition_abs = np.convolve(np.abs(T_to_thigh_angle_diff), np.ones(transition_n) / transition_n, 'same')
+        for i in range(3):
+            transition_abs = np.convolve(np.abs(transition_abs), np.ones(transition_n) / transition_n, 'same')
+        
     transition = transition_abs > diff_thresh
 
     # initially in state -1 (sitting), in transition switch to state 0 (transitioning), then to invert state after transition
-    action = np.zeros(len(T_to_thigh_angle_diff))
+    action = np.zeros(len(angle))
     state = -1
     action[0] = state
-    for i in range(1, len(T_to_thigh_angle_diff)-1):
+    for i in range(1, len(angle)-1):
         prev = transition[i-1]
         curr = transition[i]
         next = transition[i+1]
@@ -130,18 +144,108 @@ class gait_processor():
     '''
     For processing extracted 3D body keypoints 
     '''
-    def __init__(self, body_ts_loader, fig_outpath) -> None:
+    def __init__(self, body_ts_loader, fig_outpath, bone_norm=True, win_feats=True) -> None:
         self.fig_outpath = fig_outpath
         self.body_ts_loader = body_ts_loader
         self.task = body_ts_loader.task
         self.subjects = body_ts_loader.subjects
         self.feat_names = info.clinical_gait_feat_names
         # TODO: just compute ts always, and then avg the ts data to get the avg data
+        self.bone_norm = bone_norm  # norm features by hip bone length?
+        self.win_feats = win_feats  # use windows for features that might use it? (like Mohsens original)
         self.feats_avg = self.compute_features(self.subjects, ts=False)
         self.feats_ts = self.compute_features(self.subjects, ts=True)
         self.thresholds = None
+
+        self.data_frame_idxs = self.body_ts_loader.data_idxs
+         
     
-    def plot_feats_ts(self, show=True, save_fig=True, outpath=None):
+    feat_plot_ylims = {
+        'windowed': {
+            'Step Width': [0, 1.25],
+            'Cadence': [0, 400],
+            'Right Arm Swing': [1, 2.5],
+            'Left Arm Swing': [1, 2.5],
+            
+            'Right Step Length': [0, 2],
+            'Left Step Length': [0, 2],
+            'Right Foot Clearance': [0, 0.75],
+            'Left Foot Clearance': [0, 0.75],
+            
+            'Right Hip Flexion': [0, 0.8],
+            'Left Hip Flexion': [0, 0.8],
+            'Right Knee Flexion': [0, 0.8],
+            'Left Knee Flexion': [0, 0.8],
+
+            'Right Trunk rotation (calculated by right side key points)': [0, 0.75],
+            'Left Trunk rotation (calculated by left side key points)': [0, 0.75],
+            'Arm swing symmetry': [0.5, 1.5],
+        },
+        'unwindowed': {
+            'Step Width': [0, 1.5],
+            'Cadence': [0, 400],
+            'Right Arm Swing': [0.5, 2.5],
+            'Left Arm Swing': [0.5, 2.5],
+            
+            'Right Step Length': [0, 2],
+            'Left Step Length': [0, 2],
+            'Right Foot Clearance': [-0.5, -2.5],
+            'Left Foot Clearance': [-0.5, -2.5],
+            
+            'Right Hip Flexion': [-1, 1],
+            'Left Hip Flexion': [-1, 1],
+            'Right Knee Flexion': [0, 1.25],
+            'Left Knee Flexion': [0, 1.25],
+
+            # 'Right Trunk rotation (calculated by right side key points)': [0, 1.5],
+            # 'Left Trunk rotation (calculated by left side key points)': [0, 1.5],
+            'Right Trunk rotation (calculated by right side key points)': [-0.5, 0.5],
+            'Left Trunk rotation (calculated by left side key points)': [-0.5, 0.5],
+            'Arm swing symmetry': [0, 1.75],
+        },        
+        # Not Procrustes:
+        # 'unwindowed': {
+        #     'Step Width': [0, 1.25],
+        #     'Cadence': [0, 400],
+        #     'Right Arm Swing': [0, 3],
+        #     'Left Arm Swing': [0, 3],
+            
+        #     'Right Step Length': [-1, 2],
+        #     'Left Step Length': [-1, 2],
+        #     'Right Foot Clearance': [-3, 0],
+        #     'Left Foot Clearance': [-3, 0],
+            
+        #     'Right Hip Flexion': [-1, 1],
+        #     'Left Hip Flexion': [-1, 1],
+        #     'Right Knee Flexion': [1, 2.5],
+        #     'Left Knee Flexion': [1, 2.5],
+
+        #     'Right Trunk rotation (calculated by right side key points)': [-6, -1],
+        #     'Left Trunk rotation (calculated by left side key points)': [-6, -1],
+        #     'Arm swing symmetry': [0, 2],
+        # },        
+
+        # 'Right Foot Clearance': [1, 2.5],
+        # 'Left Foot Clearance': [1, 2.5],
+        # 'Right Step Length': [0, 2.0],
+        # 'Left Step Length': [0, 2.0],
+
+        # 'Right Hip Flexion': [-1, 1],
+        # 'Left Hip Flexion': [-1, 1],
+        # 'Right Knee Flexion': [1, 3],
+        # 'Left Knee Flexion': [1, 3],
+
+        # 'Right Trunk rotation (calculated by right side key points)': [-3, 0],
+        # 'Left Trunk rotation (calculated by left side key points)': [-2, 2],
+        # 'Arm swing symmetry': [0, 2.0],
+    }
+
+    # feat_plot_xlims = {
+    #     'tug_stand_walk_sit': 100,
+    #     'free_form_oval': 2000,
+    # }
+    
+    def plot_feats_ts(self, show=True, save_fig=True, outpath=None, plot_subjs=None, time_ax=False):
         '''
         Plot the time series of the features
     
@@ -153,22 +257,65 @@ class gait_processor():
         '''
         if outpath is None:
             outpath = self.fig_outpath + 'feats_ts.png'
+        if plot_subjs is None:
+            plot_subjs = self.subjects
 
-        fig_rows = 5 #5
-        fig_cols = 3 #3
+        fig_rows = 5
+        fig_cols = 3
         fig, ax = plt.subplots(fig_rows, fig_cols, layout="constrained")
         fig.set_size_inches(18.5, 10.5)
-        # plot
-        for ii in range(len(info.clinical_gait_feat_names)): # 10):
-            # for jj in [19, 25, 26]:  # enumerate(self.subjects):
-            for jj, S_id in enumerate([0, 27, 29]):
-                feat = self.feats_ts[ii][jj]
-                label = S_id if ii==0 else None
-                ax[ii//fig_cols, ii%fig_cols].plot(feat, linewidth=1.5, alpha=0.5, label=label)
-            ax[ii//fig_cols, ii%fig_cols].set_title(info.clinical_gait_feat_names[ii])
-            ax[ii//fig_cols, ii%fig_cols].set_xlabel('pose idx')
+        colours = ['b', 'r', 'g', 'c', 'm', 'y', 'k', 'tab:orange', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
-            ax[ii//fig_cols, ii%fig_cols].set_xlim([0, 200])
+        for i, feat_name in enumerate(info.clinical_gait_feat_names):
+            # set lims
+            win_token = 'windowed' if self.win_feats else 'unwindowed'
+            if feat_name in self.feat_plot_ylims[win_token].keys():
+                ax[i//fig_cols, i%fig_cols].set_ylim(self.feat_plot_ylims[win_token][feat_name])
+
+            if self.task == 'tug_stand_walk_sit':
+                xlim = 100
+            elif self.task == 'free_form_oval':
+                xlim = 1850
+
+            # if time_ax:
+            #     fps = cam_sys_info.new_sys_fps if S_id in info.subjects_new_sys else cam_sys_info.old_sys_fps
+            #     xlim /= fps
+
+            for S_id in plot_subjs:
+                j  = self.subjects.index(S_id)
+                feat = self.feats_ts[i][j]
+                label = S_id if i==0 else None
+                frame_idxs = copy.deepcopy(self.data_frame_idxs[j][0])
+
+                if time_ax:
+                    fps = cam_sys_info.new_sys_fps if S_id in info.subjects_new_sys else cam_sys_info.old_sys_fps
+                    frame_idxs = np.round(frame_idxs / fps, 3)
+                    xlim /= fps
+                    x_offset = alphapose_filtering.task_timestamps[S_id][self.task]['start']
+                    frame_idxs += x_offset
+                    xlabel = 'time (s)'
+                else:
+                    x_offset = 0
+                    xlabel = 'frame idx'
+                
+                # some features reduce length by 30 due to windowing
+                # TODO: HOW TO BEST HANDLE CADENCE???
+                if feat.shape[0] < frame_idxs.shape[0]:
+                    frame_idxs = frame_idxs[:feat.shape[0]]
+                
+                # get frame_idxs gaps & their idxs, then split there
+                gaps = np.diff(frame_idxs) > 1
+                gap_idxs = np.where(gaps)[0]
+                feat_splits = np.split(feat, gap_idxs+1)    # y
+                frame_idxs_splits = np.split(frame_idxs, gap_idxs+1)    # x
+                # plot lines
+                lines = [list(zip(x, y)) for x, y in zip(frame_idxs_splits, feat_splits)]
+                lc = LineCollection(lines, linewidths=1.5, alpha=0.5, label=label, colors=colours[j])
+                ax[i//fig_cols, i%fig_cols].add_collection(lc)
+
+            ax[i//fig_cols, i%fig_cols].set_title(info.clinical_gait_feat_names[i])
+            ax[i//fig_cols, i%fig_cols].set_xlabel(xlabel)
+            ax[i//fig_cols, i%fig_cols].set_xlim([x_offset, xlim])
 
         fig.legend(loc='right', bbox_to_anchor=(1, 0.5))
         if save_fig: plt.savefig(outpath, dpi=500)
@@ -354,12 +501,26 @@ class gait_processor():
         data = self.body_ts_loader.get_data_norm(S_id)
 
         if self.task == 'tug_stand_walk_sit':
-            data = data[classify_tug(np.transpose(data, (0,2,1)))]
+            T_to_thigh_angle = get_T_thigh_angle(np.transpose(data, (0,2,1)))
+            
+            ang_smooth_n = 10
+            T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
+            T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
+            T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
+
+            action_class, _ = classify_tug(T_to_thigh_angle, n=15, diff_thresh=0.015)
+
+            # data = data[classify_tug(np.transpose(data, (0,2,1)))]
+            data = data[action_class==1]
         elif self.task == 'free_form_oval':
             pass
         else:
             raise Exception("Task {} not yet implemented".format(self.task))
         return data
+
+    # TODO: Helper to do the windowing
+    def _window(self, data, win_len=30, win_step=1):
+        pass
 
     # Helper to apply filtering to time series data
     def _filter_1d(self, data, filter=None, win_len=3, ord=3):
@@ -374,39 +535,40 @@ class gait_processor():
         step_widths = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            step_width = np.abs(data_norm[:,3,0] - data_norm[:,6,0])
-            bone_length = np.linalg.norm((data_norm[:,1] - data_norm[:,4]),axis=-1)
-            step_width /= bone_length
+            step_width = np.abs(data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle'],0] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle'],0])
+            bone_length = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']]),axis=-1)
+            if self.bone_norm:
+                step_width /= bone_length
             step_widths.append(self._filter_1d(step_width, filter) if ts else 
                                 np.mean(self._filter_1d(step_width, "moving_avg", 29, 1)))
         return step_widths
     
-    def _step_lengths(self, subjects, ts=False, filter=True):
+    def _step_lengths(self, subjects, ts=False, filter=True, bone_norm=True):
+        max_win = 30
         step_lengths = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            step_length = np.linalg.norm((data_norm[:,3] - data_norm[:,6]), axis=-1)
-            # IF RIGHT FOOT IS IN FRONT OF LEFT FOOT, & VICE VERSA
-            row_r = (data_norm[:,6,2] - data_norm[:,3,2] > 0)
-            row_l = (data_norm[:,3,2] - data_norm[:,6,2] > 0)
+            step_length = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle']]), axis=-1)
+            # IF RIGHT FOOT IS HIGHER THAN LEFT FOOT, & VICE VERSA (IE LIFTED)
+            row_r = (data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle'],2] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle'],2] > 0)
+            row_l = (data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle'],2] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle'],2] > 0)
             step_length_r = step_length[row_r]
             step_length_l = step_length[row_l]
             #
-            bone_length_r = np.linalg.norm((data_norm[:,5] - data_norm[:,6]), axis=-1)[row_r]
-            bone_length_l = np.linalg.norm((data_norm[:,3] - data_norm[:,2]), axis=-1)[row_l]
-            step_length_r /= bone_length_r
-            step_length_l /= bone_length_l
+            bone_length_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle']]), axis=-1)[row_r]
+            bone_length_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle']]), axis=-1)[row_l]
+            if self.bone_norm:
+                step_length_r /= bone_length_r
+                step_length_l /= bone_length_l
 
             if not ts:
-                # THIS -30 LEADS TO 60 LESS TIMESTEPS, WHAT IS THIS DOING?
-                # TODO: WHY DO WE USE MAX FROM LAST 30 TIMESTEPS?
                 A=[]
-                for ii in range(30,len(step_length_r)):
-                    A.append(np.max(step_length_r[ii-30:ii]))
+                for ii in range(max_win, len(step_length_r)):
+                    A.append(np.max(step_length_r[ii-max_win:ii]))
                 step_length_r = np.asarray(A)
                 B=[]
-                for ii in range(30,len(step_length_l)):
-                    B.append(np.max(step_length_l[ii-30:ii]))
+                for ii in range(max_win, len(step_length_l)):
+                    B.append(np.max(step_length_l[ii-max_win:ii]))
                 step_length_l = np.asarray(B)
 
                 step_lengths.append([np.mean(step_length_r), np.mean(step_length_l)])
@@ -426,28 +588,29 @@ class gait_processor():
                 if not filter:
                     step_lengths.append(np.vstack([sl_R, sl_L]))
                     break
-                # take max of last 30 timesteps, to get peak step lengths
-                # TODO: FIND OUT WHY THIS IS NEEDED, WHY IS THERE THE OSCILLATION IN RAW?
-                sl_R_peaks = np.full_like(sl_R, 0)
-                sl_L_peaks = np.full_like(sl_L, 0)
-                for ii in range(30,len(sl_R)):
-                    sl_R_peaks[ii] = np.max(sl_R[ii-30:ii])
-                for ii in range(30,len(sl_L)):
-                    sl_L_peaks[ii] = np.max(sl_L[ii-30:ii])
-                step_lengths.append(np.vstack([sl_R_peaks, sl_L_peaks]))
+                if self.win_feats:
+                    # take max of last 30 timesteps, to get peak step lengths
+                    sl_R_peaks = np.full_like(sl_R, 0)
+                    sl_L_peaks = np.full_like(sl_L, 0)
+                    for ii in range(max_win, len(sl_R)):
+                        sl_R_peaks[ii] = np.max(sl_R[ii-max_win:ii])
+                    for ii in range(max_win, len(sl_L)):
+                        sl_L_peaks[ii] = np.max(sl_L[ii-max_win:ii])
+                    # step_lengths.append(np.vstack([sl_R_peaks, sl_L_peaks]))
+                step_lengths.append(np.vstack([sl_R, sl_L]))
         return step_lengths
             
     def _cadence_gaitspeed_gaitspeedvar(self, subjects, ts = False):
         cadences_and_speeds = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            toe_traj = np.abs(data_norm[:,6,2] - data_norm[:,3,2])
+            toe_traj = np.abs(data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle'],2] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle'],2])
             peaks, _ = find_peaks(toe_traj, distance=5, height=-0.2)
             ave = np.mean(toe_traj[peaks]) - 0.3
             peaks, _ = find_peaks(toe_traj, distance=5, height=ave)
-            # TODO: FIND OUT WHY THIS IS DIFFERENT FOR S01, S28, S29, S31 -> DIFF FPS?
-            if subj in ['S01','S28','S29','S31']:
-                cadence = 60/((peaks[1:]-peaks[:-1])/30)
+
+            if subj in info.subjects_new_sys:
+                cadence = 60 / ((peaks[1:] - peaks[:-1]) / 30)
                 gait_speed = toe_traj[peaks[1:]] * cadence
             else:
                 cadence = 60 / ((peaks[1:] - peaks[:-1]) / 15)
@@ -456,7 +619,8 @@ class gait_processor():
             cadences_and_speeds.append([cadence, gait_speed] if ts else [np.mean(cadence), np.mean(gait_speed)])
         return cadences_and_speeds
     
-    def _foot_lifts(self, subjects, ts = False, filter="moving_avg"):
+    def _foot_lifts(self, subjects, ts = False, filter="moving_avg", bone_norm=True):
+        max_win = 30
         foot_lifts = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
@@ -464,100 +628,116 @@ class gait_processor():
             foot_height_l = data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle'],1] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip'],1]
             bone_length_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee']]), axis=-1)
             bone_length_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']]), axis=-1)
-            # foot_height_r /= bone_length_r
-            # foot_height_l /= bone_length_l
-            A=[]
-            B=[]
-            for ii in range(30,len(foot_height_r)):
-                A.append(np.max(foot_height_r[ii-30:ii]) - np.min(foot_height_r[ii-30:ii]))
-                B.append(np.max(foot_height_l[ii-30:ii]) - np.min(foot_height_l[ii-30:ii]))
-            foot_height_n_r = np.asarray(A)
-            foot_height_n_l = np.asarray(B)
+            if self.bone_norm:
+                foot_height_r /= bone_length_r
+                foot_height_l /= bone_length_l
+            # TODO: REPLACE WITH INTERNAL WINDOWING FUNC
+            if self.win_feats:
+                A=[]
+                B=[]
+                for ii in range(max_win, len(foot_height_r)):
+                    A.append(np.max(foot_height_r[ii-max_win:ii]) - np.min(foot_height_r[ii-max_win:ii]))
+                    B.append(np.max(foot_height_l[ii-max_win:ii]) - np.min(foot_height_l[ii-max_win:ii]))
+                foot_height_n_r = np.asarray(A)
+                foot_height_n_l = np.asarray(B)
+            else:
+                foot_height_n_r = foot_height_r
+                foot_height_n_l = foot_height_l
             foot_lifts.append([self._filter_1d(foot_height_n_r, filter), self._filter_1d(foot_height_n_l, filter)] if ts else 
                               [np.mean(foot_height_n_r), np.mean(foot_height_n_l)])   
         return foot_lifts
 
-    def _arm_swings(self, subjects, ts = False, filter="moving_avg"):
+    def _arm_swings(self, subjects, ts = False, filter="moving_avg", bone_norm=True):
         arm_swings = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
             bone_length = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']]), axis=-1)
             dist_R = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LWrist']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']]), axis=-1)
             dist_L = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RWrist']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']]), axis=-1)
-            # dist_R /= bone_length
-            # dist_L /= bone_length
+            if self.bone_norm:
+                dist_R /= bone_length
+                dist_L /= bone_length
             dist_R = self._filter_1d(dist_R, filter)
             dist_L = self._filter_1d(dist_L, filter)
             arm_swings.append([dist_R, dist_L, dist_L / dist_R] if ts else
                                 [np.mean(dist_R), np.mean(dist_L), np.mean(dist_L) / np.mean(dist_R)])
         return arm_swings
     
-    def _hip_flexions(self, subjects, ts = False):
+    def _hip_flexions(self, subjects, ts = False, bone_norm=True):
+        max_win = 30
         hip_flexions = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            dist_l = data_norm[:,1,2] - data_norm[:,2,2]
-            bone_l = np.linalg.norm((data_norm[:,1] - data_norm[:,2]), axis=-1)
-            bone_r = np.linalg.norm((data_norm[:,4] - data_norm[:,5]), axis=-1)
-            dist_r = data_norm[:,4,2] - data_norm[:,5,2]
-            hip_flex_r = dist_r / bone_r
-            hip_flex_l = dist_l / bone_l
-            A = []
-            B = []
-            for ii in range(30,len(hip_flex_r)):
-                A.append(np.max(hip_flex_r[ii-30:ii]) - np.min(hip_flex_r[ii-30:ii]))
-                B.append(np.max(hip_flex_l[ii-30:ii]) - np.min(hip_flex_l[ii-30:ii])) 
-            hip_flex_r = np.asarray(A)
-            hip_flex_l = np.asarray(B)
+            dist_l = data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip'],2] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee'],2] # y dist
+            dist_r = data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip'],2] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee'],2] # y dist
+            bone_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee']]), axis=-1)
+            bone_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee']]), axis=-1)
+            if self.bone_norm:
+                hip_flex_r = dist_r / bone_r
+                hip_flex_l = dist_l / bone_l
+            else:
+                hip_flex_r = dist_r
+                hip_flex_l = dist_l
+            if self.win_feats:
+                A = []
+                B = []
+                for ii in range(max_win, len(hip_flex_r)):
+                    A.append(np.max(hip_flex_r[ii-max_win:ii]) - np.min(hip_flex_r[ii-max_win:ii]))
+                    B.append(np.max(hip_flex_l[ii-max_win:ii]) - np.min(hip_flex_l[ii-max_win:ii])) 
+                hip_flex_r = np.asarray(A)
+                hip_flex_l = np.asarray(B)
             hip_flexions.append([hip_flex_r, hip_flex_l] if ts else 
                                 [np.mean(hip_flex_r), np.mean(hip_flex_l)])
         return hip_flexions
 
     def _knee_flexions(self, subjects, ts = False):
+        max_win = 30
         knee_flexions = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            thigh_l = np.linalg.norm((data_norm[:,1] - data_norm[:,2]), axis=-1)
-            shin_l = np.linalg.norm((data_norm[:,3] - data_norm[:,2]), axis=-1)
-            leg_l = np.linalg.norm((data_norm[:,1] - data_norm[:,3]), axis=-1)
-            thigh_r = np.linalg.norm((data_norm[:,5] - data_norm[:,4]), axis=-1)
-            shin_r = np.linalg.norm((data_norm[:,5] - data_norm[:,6]), axis=-1)
-            leg_r = np.linalg.norm((data_norm[:,4] - data_norm[:,6]), axis=-1)
-            knee_flex_r = leg_r**2 / (thigh_r * shin_r) - thigh_r / shin_r - shin_r / thigh_r
-            knee_flex_l = leg_l**2 / (thigh_l * shin_l) - thigh_l / shin_l - shin_l / thigh_l
-            A = []
-            B = []
-            for ii in range(30,len(knee_flex_r)):
-                A.append(np.max(knee_flex_r[ii-30:ii]) - np.min(knee_flex_r[ii-30:ii]))
-                B.append(np.max(knee_flex_l[ii-30:ii]) - np.min(knee_flex_l[ii-30:ii]))
-            knee_flex_r = np.asarray(A)
-            knee_flex_l = np.asarray(B)
+            thigh_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee']]), axis=-1)
+            thigh_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee']]), axis=-1)
+            shin_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LKnee']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle']]), axis=-1)
+            shin_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RKnee']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle']]), axis=-1)
+            leg_l = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['LHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['LAnkle']]), axis=-1)
+            leg_r = np.linalg.norm((data_norm[:,info.PD_3D_skeleton_kpt_idxs['RHip']] - data_norm[:,info.PD_3D_skeleton_kpt_idxs['RAnkle']]), axis=-1)
+            knee_flex_r = ((leg_r**2 / (thigh_r * shin_r)) - (thigh_r / shin_r) - (shin_r / thigh_r)) / (2)
+            knee_flex_l = ((leg_l**2 / (thigh_l * shin_l)) - (thigh_l / shin_l) - (shin_l / thigh_l)) / (2)
+            if self.win_feats:
+                A = []
+                B = []
+                for ii in range(max_win,len(knee_flex_r)):
+                    A.append(np.max(knee_flex_r[ii-max_win:ii]) - np.min(knee_flex_r[ii-max_win:ii]))
+                    B.append(np.max(knee_flex_l[ii-max_win:ii]) - np.min(knee_flex_l[ii-max_win:ii]))
+                knee_flex_r = np.asarray(A)
+                knee_flex_l = np.asarray(B)
             # TODO: IS THIS THE RIGHT ORDER? MOHSEN HAD IT SWAPPED (L, R), OPPOSITE TO ALL OTHERS
             knee_flexions.append([knee_flex_r, knee_flex_l] if ts else 
                                  [np.mean(knee_flex_r), np.mean(knee_flex_l)])
         return knee_flexions
 
-    def _trunk_rots(self, subjects, ts = False):
+    def _trunk_rots(self, subjects, ts=False):
+        max_win = 30
         trunk_rots = []
         for subj in subjects:
             data_norm = self._get_proper_subj_data(subj)
-            data_normal = data_norm - data_norm[:,:1]
-            shoulder_l = np.linalg.norm((data_normal[:,9,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
-            hip_l = np.linalg.norm((data_normal[:,4,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
-            hip2shoulder_l = np.linalg.norm((data_normal[:,4,[0,2]] - data_normal[:,9,[0,2]]), axis=-1)
-            shoulder_r = np.linalg.norm((data_normal[:,12,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
-            hip_r = np.linalg.norm((data_normal[:,1,[0,2]] - data_normal[:,0,[0,2]]), axis=-1)
-            hip2shoulder_r = np.linalg.norm((data_normal[:,1,[0,2]] - data_normal[:,12,[0,2]]), axis=-1)
-            trunk_rot_r = hip2shoulder_r**2 / (hip_r * shoulder_r) - hip_r / shoulder_r - shoulder_r / hip_r
-            trunk_rot_l = hip2shoulder_l**2 / (hip_l * shoulder_l) - hip_l / shoulder_l - shoulder_l / hip_l
-            A = []
-            B = []
-            # TODO: WHY DO THIS MAX-MIN?
-            for ii in range(30,len(trunk_rot_r)):
-                A.append(np.max(trunk_rot_r[ii-30:ii]) - np.min(trunk_rot_r[ii-30:ii]))
-                B.append(np.max(trunk_rot_l[ii-30:ii]) - np.min(trunk_rot_l[ii-30:ii]))   
-            trunk_rot_r = np.asarray(A)
-            trunk_rot_l = np.asarray(B)
+            data_normal = data_norm - data_norm[:,:info.PD_3D_skeleton_kpt_idxs['LHip']]
+            shoulder_l = np.linalg.norm((data_normal[:,info.PD_3D_skeleton_kpt_idxs['LShoulder'],[0,1]] - data_normal[:,info.PD_3D_skeleton_kpt_idxs['LHip'],[0,1]]), axis=-1)
+            shoulder_r = np.linalg.norm((data_normal[:,info.PD_3D_skeleton_kpt_idxs['RShoulder'],[0,1]] - data_normal[:,info.PD_3D_skeleton_kpt_idxs['RHip'],[0,1]]), axis=-1)
+            hip_l = np.linalg.norm((data_normal[:,info.PD_3D_skeleton_kpt_idxs['Hip'],[0,1]] - data_normal[:,info.PD_3D_skeleton_kpt_idxs['LHip'],[0,1]]), axis=-1)
+            hip_r = np.linalg.norm((data_normal[:,info.PD_3D_skeleton_kpt_idxs['Hip'],[0,1]] - data_normal[:,info.PD_3D_skeleton_kpt_idxs['RHip'],[0,1]]), axis=-1)
+            hip2shoulder_l = np.linalg.norm((data_normal[:,info.PD_3D_skeleton_kpt_idxs['RHip'],[0,1]] - data_normal[:,info.PD_3D_skeleton_kpt_idxs['RShoulder'],[0,1]]), axis=-1)
+            hip2shoulder_r = np.linalg.norm((data_normal[:,info.PD_3D_skeleton_kpt_idxs['LHip'],[0,1]] - data_normal[:,info.PD_3D_skeleton_kpt_idxs['LShoulder'],[0,1]]), axis=-1)
+            trunk_rot_r = ((hip2shoulder_r**2 / (hip_r * shoulder_r)) - (hip_r / shoulder_r) - (shoulder_r / hip_r)) / (2)  # TODO: WHY IS THE SIGN FLIPPED?
+            trunk_rot_l = ((hip2shoulder_l**2 / (hip_l * shoulder_l)) - (hip_l / shoulder_l) - (shoulder_l / hip_l)) / (-2)
+            if self.win_feats:
+                A = []
+                B = []
+                for ii in range(max_win, len(trunk_rot_r)):
+                    A.append(np.max(trunk_rot_r[ii-max_win:ii]) - np.min(trunk_rot_r[ii-max_win:ii]))
+                    B.append(np.max(trunk_rot_l[ii-max_win:ii]) - np.min(trunk_rot_l[ii-max_win:ii]))   
+                trunk_rot_r = np.asarray(A)
+                trunk_rot_l = np.asarray(B)
             trunk_rots.append([trunk_rot_r, trunk_rot_l] if ts else 
-                              [np.mean(trunk_rot_r), np.mean(trunk_rot_l)])
+                            [np.mean(trunk_rot_r), np.mean(trunk_rot_l)])
         return trunk_rots

@@ -19,7 +19,7 @@ task_timestamps = {
         'S01': {'free_form_oval': {'start': 13, 'end': 146}, 'tug_stand_walk_sit': {'start': 25, 'end': 45}, 'arising_chair': {'start': 5, 'end': 35}, },
         'S28': {'free_form_oval': {'start': 20, 'end': 142}, 'tug_stand_walk_sit': {'start': 0, 'end': 20}, 'arising_chair': {'start': 0, 'end': 25}, },
         'S29': {'free_form_oval': {'start': 4, 'end': 126}, 'tug_stand_walk_sit': {'start': 0, 'end': 20}, 'arising_chair': {'start': 0, 'end': 25}, },
-        'S31': {'free_form_oval': {'start': 14, 'end': 138}, 'tug_stand_walk_sit': {'start': 15, 'end': 40}, 'arising_chair': {'start': 5, 'end': 35}},
+        'S31': {'free_form_oval': {'start': 14, 'end': 138}, 'tug_stand_walk_sit': {'start': 16, 'end': 40}, 'arising_chair': {'start': 5, 'end': 35}},
 }
 
 # Collection of timestamp (?) filters for AlphaPose outputs of "free_form_oval" task for CH3 (row1) and CH4 (row2)

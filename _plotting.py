@@ -2,6 +2,7 @@ import torch
 import cv2
 import argparse
 from utils import info, post_processing, helpers, pose_visualization, metrics, pose_utils, cam_sys_info
+from utils.post_processing import gait_processor
 from feature_utils import sit_to_stand
 import numpy as np
 import data.body.body_dataset as body_dataset
@@ -57,16 +58,16 @@ def plot_thing(S_id, pred_3d, in_frames, out_fig_path):
 
 
 
-    ang_smooth_n = 10
-    T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
-    T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
-    T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
+    # ang_smooth_n = 10
+    # T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
+    # T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
+    # T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
 
-    ax1.plot(in_frames, sit_to_stand.get_elbow_angles(pred_3d), c='b', label='elb ang', linewidth=0.5)
-    ax1.plot(in_frames, sit_to_stand.get_hip_forearm_angle(pred_3d), c='y', label='fora-hip ang', linewidth=0.5)
-    ax2.plot(in_frames, sit_to_stand.get_hands_to_hip_dist(pred_3d), c='c', label='hand-hip dist', linewidth=0.5)
+    # ax1.plot(in_frames, sit_to_stand.get_elbow_angles(pred_3d), c='b', label='elb ang', linewidth=0.5)
+    # ax1.plot(in_frames, sit_to_stand.get_hip_forearm_angle(pred_3d), c='y', label='fora-hip ang', linewidth=0.5)
+    # ax2.plot(in_frames, sit_to_stand.get_hands_to_hip_dist(pred_3d), c='c', label='hand-hip dist', linewidth=0.5)
 
-    ax1.set_ylim([1.5, 1.75])
+    # ax1.set_ylim([1.5, 1.75])
     ax2.set_ylabel('dist')
 
 
@@ -76,7 +77,7 @@ def plot_thing(S_id, pred_3d, in_frames, out_fig_path):
     T_to_thigh_angle = post_processing.get_T_thigh_angle(pred_3d, n=n)
 
     # ax1.scatter(in_frames[n-1:], T_to_thigh_angle, c='b', s=0.2, label='ang',)
-    # ax1.scatter(in_frames, T_to_thigh_angle, c='b', s=0.2, label='ang',)
+    ax1.scatter(in_frames, T_to_thigh_angle, c='b', s=0.2, label='ang',)
     # ax1.set_title('{} Torso-Thigh angle'.format(S_id))
     ax1.set_title('{} feats'.format(S_id))
     ax1.set_xlabel('timestep (img frame idx)')
@@ -91,10 +92,10 @@ def plot_thing(S_id, pred_3d, in_frames, out_fig_path):
     # ax3.set_ylabel('d_ang (rad/frame)')
 
     # Smooth angle for further processing
-    ang_smooth_n = 10
-    T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
-    T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
-    T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
+    # ang_smooth_n = 10
+    # T_to_thigh_angle = np.convolve(np.abs(T_to_thigh_angle), np.ones(ang_smooth_n) / ang_smooth_n, 'same')
+    # T_to_thigh_angle[:ang_smooth_n] = T_to_thigh_angle[ang_smooth_n:2*ang_smooth_n]
+    # T_to_thigh_angle[-ang_smooth_n:] = T_to_thigh_angle[-2*ang_smooth_n:-ang_smooth_n]
     
 
     # discrete diff of T_to_thigh_angle
@@ -118,7 +119,8 @@ def plot_thing(S_id, pred_3d, in_frames, out_fig_path):
 
 
     # ax2.scatter(in_frames[n:], action_class, c='r', s=0.2, label='action',)
-    # ax3.scatter(in_frames[n:], abs_transition, c='y', s=0.2, label='abs/filt d_ang')
+    ax3.scatter(in_frames[n:], abs_transition, c='y', s=0.2, label='abs/filt d_ang')
+    ax3.set_ylim([0.0, 0.04])
 
     ax2.scatter(in_frames, action_class, c='r', s=0.2, label='action',)
     # ax3.scatter(in_frames, abs_transition, c='y', s=0.2, label='abs/filt d_ang')
@@ -187,10 +189,21 @@ def naive_voting(gait_processor, subjs):
 def body_tasks():
 
     # task = 'tug_stand_walk_sit'
-    # task = 'free_form_oval'
-    task = 'arising_chair'
-    chs = ['002', '006']
-    inf_ch_idx = 1
+    task = 'free_form_oval'
+    # task = 'arising_chair'
+    
+    chs = ['001', '002']
+    # chs = ['001', '006']
+    # chs = ["006", "007"]
+    # chs = ["001", "007"]
+    # chs = ["003", "006"]
+
+    # chs = ["002", "003"]
+    # chs = ['002', '006']
+
+    # chs = ["001", "006", "007"]
+    # chs = ["001", "002", "007"]
+    inf_ch_idx = 0
 
     # subjs = [subj for subj in info.subjects_All if subj not in ['S21']] # TUG S21 is too short
     subjs = info.subjects_new_sys
@@ -200,42 +213,52 @@ def body_tasks():
     body_3d_preds_path = "{}3d_time_series/all_tasks_CH{}.pickle".format(dataset_path, chs[inf_ch_idx])
 
     ts_loader = body_ts_loader(body_3d_preds_path, body_2d_kpts_path, task, subjects=subjs,
-                                pickled=True, proc_aligned=False, zero_rot=True, smoothing=False)
+                                pickled=True, proc_aligned=True, zero_rot=True, smoothing=True)
 
     # Feature extraction
     # print("Extracting features...")
-    # feature_processor = post_processing.gait_processor(ts_loader, "./auto_UPDRS/outputs/")
-    # print("Plotting features...")
+    feature_processor = gait_processor(ts_loader, "./auto_UPDRS/outputs/", 
+                                       bone_norm=True, win_feats=False)
+    print("Plotting features...")
     # feature_processor.plot_feats_ts(show=False)
+    feature_processor.plot_feats_ts(show=False, plot_subjs=['S31'], time_ax=True)
 
     # Simple voting classifiers
     # naive_voting(feature_processor, subjs)
 
     # Single Subj plotting
-    for S_id in ['S01']:
-    # for S_id in ['S33']:
+    for S_id in ['S28']:
+    # for S_id in info.subjects_new_sys:
+    # for S_id in ['S29']:
     # for S_id in [subj for subj in info.subjects_All if subj not in ['S21']]:
-        # load 3d pickle
-        # with open(body_3d_preds_path, 'rb') as f:
-        #     body_3d_preds = pickle.load(f)
+        # print("Plotting features...")
+        # feature_processor.plot_feats_ts(show=False, plot_subjs=[S_id])
 
         pred_3d_kpts = np.transpose(ts_loader.get_data_norm(S_id), (0, 2, 1))
 
         data_2d = body_dataset.get_2D_data([S_id], [task], body_2d_kpts_path, normalized=True, old_sys_return_only=inf_ch_idx)
-        (ch0_2d_kpts, ch1_2d_kpts, ch0_2d_confs, ch1_2d_confs, ch0_frames, ch1_frames) = data_2d
+        poses_2d, confs_2d, subjs_2d, frames_2d = data_2d
+
+        ch0_2d_kpts = poses_2d[0]
+        ch1_2d_kpts = poses_2d[1]
+
+        ch0_frames = frames_2d[0]
+        ch1_frames = frames_2d[1]
 
         # plot torso-thing angle for timing
-        plot_thing(S_id, pred_3d_kpts, (ch1_frames if inf_ch_idx else ch0_frames), out_fig_path="./auto_UPDRS/outputs/pose.png")
+        # plot_thing(S_id, pred_3d_kpts, (ch1_frames if inf_ch_idx else ch0_frames), out_fig_path="./auto_UPDRS/outputs/pose_.png")
 
-        time.sleep(2)
+        # time.sleep(2)
 
         # plot pred poses
-        # for i in tqdm(range(225, ch0_2d_kpts.shape[0])):
-        # # for i in tqdm(range(125, ch0_2d_kpts.shape[0])):
-        # # for i in tqdm(range(ch0_2d_kpts.shape[0])):
-        #     pose_visualization.visualize_multi_view_pose(pred_3d_kpts[i], kpts_2D=[ch0_2d_kpts[i], ch1_2d_kpts[i]], 
+        # for i in tqdm(range(200, ch0_2d_kpts.shape[0])):
+        # for i in tqdm(range(1650, ch0_2d_kpts.shape[0])):
+        # for i in tqdm(range(ch0_2d_kpts.shape[0])):
+        #     ch0_kpts = ch0_2d_kpts[i]
+        #     # ch0_kpts = pose_utils.flip_2D_data(ch1_2d_kpts[i], reassign=True)
+        #     pose_visualization.visualize_multi_view_pose(pred_3d_kpts[i], kpts_2D=[ch0_kpts, ch1_2d_kpts[i]], 
         #                                                  lifter_in_view=inf_ch_idx, 
-        #                                                  save_fig=True, out_fig_path="./auto_UPDRS/outputs/pose.png")
+        #                                                  save_fig=True, out_fig_path="./auto_UPDRS/outputs/pose_lifted.png")
 
 def main():
     body_tasks()
