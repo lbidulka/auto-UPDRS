@@ -55,25 +55,27 @@ subjects_ALL_id_dict = {
 
 # The big man. We can build him... we have the technology...
 subjects_big_dict = {
-                'S01': {'id': 9291, 'date': '20210223', 'path': None}, 'S02': {'id': 9739, 'date': '20191114', 'path': None}, 
-                'S03': {'id': 9285, 'date': '20191120', 'path': None}, 'S04': {'id': 9769, 'date': '20191112', 'path': None}, 
-                'S05': {'id': 9964, 'date': '20191119', 'path': None}, 'S06': {'id': 9746, 'date': '20200220', 'path': None}, 
-                'S07': {'id': 9270, 'date': '20191121', 'path': None}, 'S08': {'id': 7399, 'date': '20191126', 'path': None}, 
-                'S09': {'id': 9283, 'date': '20191128', 'path': None}, 'S10': {'id': 9107, 'date': '20191203', 'path': None}, 
-                'S11': {'id': 9455, 'date': '20191204', 'path': None}, 'S12': {'id': 9713, 'date': '20200108', 'path': None}, 
-                'S13': {'id': 9317, 'date': '20200109', 'path': None}, 'S14': {'id': 9210, 'date': '20200121', 'path': None}, 
-                'S15': {'id': 9403, 'date': '20200122', 'path': None}, 'S16': {'id': 9791, 'date': '20200123', 'path': None}, 
-                'S17': {'id': 9813, 'date': '20200124', 'path': None}, 'S18': {'id': 9525, 'date': '20200127', 'path': None}, 
-                'S19': {'id': 9419, 'date': '20200130', 'path': None}, 'S20': {'id': 7532, 'date': '20200205', 'path': None}, 
-                'S21': {'id': 9339, 'date': '20200206', 'path': None}, 'S22': {'id': 9754, 'date': '20200207', 'path': None}, 
-                'S23': {'id': 9392, 'date': '20200213', 'path': None}, 'S24': {'id': 9810, 'date': '20200214', 'path': None}, 
-                'S25': {'id': 7339, 'date': '20200218', 'path': None}, 'S26': {'id': 7399, 'date': '20191126', 'path': None}, 
-                'S27': {'id': 7182, 'date': '20200221', 'path': None}, 'S28': {'id': 9986, 'date': '20210706', 'path': None}, 
-                'S29': {'id': 9731, 'date': '20210804', 'path': None}, 'S30': {'id': 9629, 'date': '20200206', 'path': None}, 
-                'S31': {'id': 9314, 'date': '20210811', 'path': None}, 'S32': {'id': 9448, 'date': '20191210', 'path': None}, 
+                # NEW SYS
+                'S01': {'id': 9291, 'date': '20210223', 'path': None}, 'S28': {'id': 9986, 'date': '20210706', 'path': None}, 
+                'S29': {'id': 9731, 'date': '20210804', 'path': None}, 'S31': {'id': 9314, 'date': '20210811', 'path': None},
+                # OLD SYS
+                'S02': {'id': 9739, 'date': '20191114', 'path': None}, 'S03': {'id': 9285, 'date': '20191120', 'path': None}, 
+                'S04': {'id': 9769, 'date': '20191112', 'path': None}, 'S05': {'id': 9964, 'date': '20191119', 'path': None}, 
+                'S06': {'id': 9746, 'date': '20200220', 'path': None}, 'S07': {'id': 9270, 'date': '20191121', 'path': None}, 
+                'S08': {'id': 7399, 'date': '20191126', 'path': None}, 'S09': {'id': 9283, 'date': '20191128', 'path': None}, 
+                'S10': {'id': 9107, 'date': '20191203', 'path': None}, 'S11': {'id': 9455, 'date': '20191204', 'path': None}, 
+                'S12': {'id': 9713, 'date': '20200108', 'path': None}, 'S13': {'id': 9317, 'date': '20200109', 'path': None}, 
+                'S14': {'id': 9210, 'date': '20200121', 'path': None}, 'S15': {'id': 9403, 'date': '20200122', 'path': None}, 
+                'S16': {'id': 9791, 'date': '20200123', 'path': None}, 'S17': {'id': 9813, 'date': '20200124', 'path': None}, 
+                'S18': {'id': 9525, 'date': '20200127', 'path': None}, 'S19': {'id': 9419, 'date': '20200130', 'path': None}, 
+                'S20': {'id': 7532, 'date': '20200205', 'path': None}, 'S21': {'id': 9339, 'date': '20200206', 'path': None}, 
+                'S22': {'id': 9754, 'date': '20200207', 'path': None}, 'S23': {'id': 9392, 'date': '20200213', 'path': None}, 
+                'S24': {'id': 9810, 'date': '20200214', 'path': None}, 'S25': {'id': 7339, 'date': '20200218', 'path': None}, 
+                'S26': {'id': 7399, 'date': '20191126', 'path': None}, 'S27': {'id': 7182, 'date': '20200221', 'path': None}, 
+                'S30': {'id': 9629, 'date': '20200206', 'path': None}, 'S32': {'id': 9448, 'date': '20191210', 'path': None}, 
                 'S33': {'id': 9993, 'date': '20191212', 'path': None}, 'S34': {'id': 9182, 'date': '20191218', 'path': None}, 
                 'S35': {'id': 9351, 'date': '20200227', 'path': None},
-                }   
+                }
 
 subjects_ALL_path_dict = {}
 for i, subj in enumerate(subjects_All):
@@ -111,20 +113,12 @@ PD_3D_lifter_skeleton = {
         'T': [8, 7, 0],        # Torso:  Head, Neck, Hip
 }
 
-# Nice dictionary for accessing idxs of the 3D pose kpts
-# PD_3D_skeleton_kpt_idxs = {
-#         'LA': {'Neck': 7, 'LShoulder': 12, 'LElbow': 13, 'LWrist': 14},
-#         'RA': {'Neck': 7, 'RShoulder': 9, 'RElbow': 10, 'RWrist': 11},
-#         'LL': {'Hip': 0, 'LHip': 1, 'LKnee': 2, 'LAnkle': 3},
-#         'RL': {'Hip': 0, 'RHip': 4, 'RKnee': 5, 'RAnkle': 6},
-#         'T': {'Head': 8, 'Neck': 7, 'Hip': 0},
-# }
 PD_3D_skeleton_kpt_idxs = {
         'Head': 8, 
         'Neck': 7, 
         'LShoulder': 12, 'LElbow': 13, 'LWrist': 14,
         'RShoulder': 9, 'RElbow': 10, 'RWrist': 11,
-        'Hip': 0, 
+        'Hip': 0, # Centre of Pelvis
         'LHip': 1, 'LKnee': 2, 'LAnkle': 3,
         'RHip': 4, 'RKnee': 5, 'RAnkle': 6,
 }

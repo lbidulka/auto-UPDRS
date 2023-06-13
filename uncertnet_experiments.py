@@ -47,12 +47,14 @@ def init_logging(args, config):
 def get_config(args):
     config = SimpleNamespace()
     # Logging -----------------------
-    config.log = True
+    config.log = False
     # -------------------------------
     # Tasks/Experiments
-    config.num_runs = 3
-    config.train = True
-    config.eval = True
+    config.num_runs = 1
+    config.tasks = ['train', 'eval']
+    # config.tasks = ['eval']
+    # config.train = True
+    # config.eval = True
 
     # Logging Details
     config.b_print_freq = 100
@@ -61,23 +63,7 @@ def get_config(args):
     config.uncertnet_save_ckpts = True
 
     # Model Architecture
-    config.simple_linear = False
-
-    config.hidden_dim = 8
-
-    config.use_confs = False        # use 3D pred confidences?
-    config.use_camID = False
-
-    config.out_per_kpt = True       # output per-kpt err vector?
-    config.out_directional = True   # output directional err vector?
-    config.num_kpts = 15
-
-    if config.out_per_kpt:
-        config.out_dim = config.num_kpts
-    else:
-        config.out_dim = 1
-    if config.out_directional:
-            config.out_dim *= 3
+    config = get_model_config(config)
 
     # Data format
     config.use_gt_targets = False   # use GT 2D/3D poses as targets? and GT-based backbone?
@@ -88,7 +74,8 @@ def get_config(args):
                     3
                 ]  # All Cam IDs: [0, 1, 2, 3]
     config.num_cams = len(config.cams)
-    config.err_scale = 25   # Scale the err by this much to make it easier to train?
+    config.err_scale = 1000   # Scale the err by this much to make it easier to train?
+    
     # Training
     config.val_split = 0.3
     config.test_split = 0   # Now I have explicit test file of fixed subjects. Set = 0 to split train data into train/val only
@@ -102,6 +89,7 @@ def get_config(args):
     config.step_lr_size = 1
     # Evaluation
     config.eval_batch_size = 4096
+    
     # Model Paths
     config.uncertnet_data_path = "auto_UPDRS/data/body/h36m/uncertnet/"
     
@@ -124,6 +112,26 @@ def get_config(args):
     config.overfit_datalim = None
     return config
 
+def get_model_config(config):
+    config.simple_linear = False
+
+    config.use_confs = False        # use 3D pred confidences?
+    config.use_camID = False
+
+    config.out_per_kpt = True       # output per-kpt err vector?
+    config.out_directional = True   # output directional err vector?
+    
+    config.num_kpts = 15
+    config.hidden_dim = 8
+
+    if config.out_per_kpt:
+        config.out_dim = config.num_kpts
+    else:
+        config.out_dim = 1
+    if config.out_directional:
+            config.out_dim *= 3
+    return config
+
 
 def main():
     args = get_args()
@@ -135,8 +143,8 @@ def main():
         logger = init_logging(args, config) if config.log else None
         model = uncertnet.uncert_net_wrapper(config, logger)
         # Do tasks as desired
-        if config.train: model.train()
-        if config.eval: model.evaluate()
+        if 'train' in config.tasks: model.train()
+        if 'eval' in config.tasks: model.evaluate()
         if config.log: logger.finish()
         
 if __name__ == '__main__':

@@ -41,7 +41,7 @@ class uncert_net_wrapper():
     '''
     Wrapper around the uncertainty network to handle training, validation, and testing.
     '''
-    def __init__(self, config, logger):
+    def __init__(self, config, logger, backbone=None):
         self.config = config
         self.logger = logger
         self.net = uncert_net(config).to(config.device)
@@ -52,8 +52,11 @@ class uncert_net_wrapper():
         self.dataset = dataset.H36M(config)
 
         # Setup pretrained 3D lifter
-        self.backbone_3d = MVP_3D.Lifter().to(config.device)
-        self.backbone_3d.load_state_dict(torch.load(config.lifter_ckpt_path))
+        if backbone is None:
+            self.backbone_3d = MVP_3D.Lifter().to(config.device)
+            self.backbone_3d.load_state_dict(torch.load(config.lifter_ckpt_path))
+        else:
+            self.backbone_3d = backbone
         self.backbone_3d.eval()
 
     def train(self):

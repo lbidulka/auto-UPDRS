@@ -12,34 +12,47 @@ from data.body.body_dataset import filter_alphapose_results
 def get_config():
     config = SimpleNamespace()
     # Tasks
+    # --------------------------------------------------
     config.get_2d_preds = False  # Proces videos to get 2d preds?
     config.compile_JSON = True  # Compile 2d preds into JSON dataset file?
 
+    # Subjs
+    # --------------------------------------------------
+    config.subjs_to_get_preds = subjects_new_sys
     # config.subjs_to_get_preds = subjects_All
-    config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
-    # config.subjs_to_get_preds = subjects_new_sys
-    # config.subjs_to_get_preds = ['S21']
+    # config.subjs_to_get_preds = [subj for subj in subjects_All if subj not in subjects_new_sys]
+    # config.subjs_to_get_preds = ['S31']
 
+    config.subjs_to_compile = subjects_new_sys
     # config.subjs_to_compile = ['S01']
     # config.subjs_to_compile = [subj for subj in subjects_All if subj not in subjects_new_sys]
-    # config.subjs_to_compile = subjects_new_sys
-    config.subjs_to_compile = subjects_All
+    # config.subjs_to_compile = subjects_All
     
     # Settings
+    # --------------------------------------------------
     config.save_preds = True            # Save the 2d preds?
     config.overwrite_ap_preds = False  # Overwrite existing 2d preds?
     config.save_JSON = True             # Save the compiled JSON dataset file?
+    config.keep_halpe = False           # Keep the halpe 2d preds format? False for our method.
 
     config.limit_num_frames = False  # DEBUG: limit number of frames to process
     config.lim_secs = 1            # Mohsen used 2 min per video 
 
-    config.updrs_task = ['free_form_oval', 'tug_stand_walk_sit']
-    # config.updrs_task = ["free_form_oval"]
-    # config.updrs_task = ["tug_stand_walk_sit"]
+    # Tasks & CHs
+    # --------------------------------------------------
+    # free_form_oval, tug_stand_walk_sit, arising_chair
+    # config.updrs_task = ['free_form_oval',]  
+    config.updrs_task = ['free_form_oval', 'tug_stand_walk_sit',]
+    # config.updrs_task = ['free_form_oval', 'tug_stand_walk_sit', 'arising_chair']
 
-    config.chs = ["002", "006"]     # NOTE: CHANNELS ARE NEW SYS NAMES, AND CONVERTED TO OLD SYS NAMES IN THE SCRIPT
+    # NOTE: CHANNELS ARE NEW SYS NAMES, AND CONVERTED TO OLD SYS NAMES IN THE SCRIPT
+    # 001, 002, 003, 004, 005, 006, 007, 008
+    config.chs = ["001", "002",]
+    # config.chs = ["001",]
+    # config.chs = ["001", "006", "007"]
 
     # Paths
+    # --------------------------------------------------
     config.root_dir = os.path.dirname(os.path.realpath(__file__))
     config.videos_path = "/mnt/CAMERA-data/CAMERA/CAMERA visits/Mobility Visit/Study Subjects/"
     config.dataset_path = "/mnt/CAMERA-data/CAMERA/Other/lbidulka_dataset/"
@@ -109,6 +122,8 @@ def get_AlphaPoses(config):
                             print("ERR not sure what to do here... : ", S_id, id, subjects_All_date[subj_idx])
                         file_subpath += 'CH_' + ch + '/'
                         files = os.listdir(config.videos_path + file_subpath)
+                        if S_id == 'S26':
+                            foo = 5
                         for file in files:
                             if fnmatch.fnmatch(file, '*{}*.mp4'.format(task)):
                                 file_subpath += file
@@ -167,7 +182,7 @@ def compile_JSON(config):
     Builds a combined task dataset (JSON) of 2D pose predictions from per-subject-per-channel alphapose pred JSONs
     '''
     print("\nCompiling predictions into JSON...\n")
-    assert len(config.chs) == 2, "Must use a pair of channels for now..."
+    # assert len(config.chs) == 2, "Must use a pair of channels for now..."
     print("config.subjs_to_compile: ", config.subjs_to_compile)
     print("config.chs: ", config.chs)
     print("config.updrs_task: ", config.updrs_task)
